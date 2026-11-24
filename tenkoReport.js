@@ -600,23 +600,22 @@
       current.diag.forEach(function (d) { total += d.total; known += d.known; });
       var weakDriverId = total > 0 && known / total < 0.5;
 
-      // ---- 結論（必要な時だけ、一覧の上に表示）----
+      // ---- お知らせ（必要な時だけ、「判定に使うルール」欄の右側に短く表示）----
       var notes = [];
       if (missing.length) {
-        notes.push('<p><strong>ルールの設定が必要です。</strong>「' + esc(missing.map(function (d) { return d.label; }).join('」「')) +
-          '」に使うルールがこのデータベースにありません。上の「判定に使うルール」で選んでください。</p>');
+        notes.push('<p>⚠ <strong>「' + esc(missing.map(function (d) { return d.label; }).join('」「')) +
+          '」のルールが見つかりません。</strong>左で選んでください</p>');
       }
       if (weakDriverId) {
-        var head = '<p><strong>ドライバー識別が不足しています。</strong>' + days + '日間に発生した ' + total +
-          ' 件のうち、ドライバーが分かったのは ' + known + ' 件だけです。';
+        var head = '<p>⚠ <strong>ドライバー識別が不足</strong>（' + total + '件中 ' + known + '件のみ判明）';
         notes.push(unit === 'device'
-          ? head + 'このため車両別で表示しています。ドライバー別にすると、ほとんど0回になります。</p>' +
-            '<button type="button" class="tk-btn tk-primary" data-unit="driver">ドライバー別で表示する</button>'
-          : head + 'このためドライバー別ではほとんど0回になります。当面は車両別での確認をおすすめします。</p>' +
-            '<button type="button" class="tk-btn tk-primary" data-unit="device">車両別で表示する</button>');
+          ? head + 'のため、車両別で表示中</p>' +
+            '<button type="button" class="tk-btn tk-primary tk-btn-sm" data-unit="driver">ドライバー別で表示</button>'
+          : head + '。車両別がおすすめです</p>' +
+            '<button type="button" class="tk-btn tk-primary tk-btn-sm" data-unit="device">車両別で表示</button>');
       }
-      note.innerHTML = notes.join('');
-      note.hidden = !notes.length;
+      note.hidden = true;   // 以前の一覧上のお知らせ欄は使わない
+      var noteHtml = notes.length ? '<div class="tk-rulebar-note">' + notes.join('') + '</div>' : '';
 
       // ---- 判定に使うルール（急ブレーキ・急加速・速度超過のプルダウン）----
       var rowsHtml = current.diag.map(function (d) {
@@ -641,7 +640,8 @@
 
       box.hidden = false;
       $('tk-diag-body').innerHTML = rowsHtml +
-        '<label class="tk-allrules"><span><input type="checkbox" id="tk-allrules"' + (showAllRules ? ' checked' : '') + '> すべてのルールを候補に表示</span></label>';
+        '<label class="tk-allrules"><span><input type="checkbox" id="tk-allrules"' + (showAllRules ? ' checked' : '') + '> すべてのルールを候補に表示</span></label>' +
+        noteHtml;
     }
     var showAllRules = false;
 
@@ -738,7 +738,7 @@
       $('tk-print').addEventListener('click', function () { window.print(); });
       $('tk-csv').addEventListener('click', exportCsv);
 
-      $('tk-diag-note').addEventListener('click', function (ev) {
+      $('tk-diag-body').addEventListener('click', function (ev) {
         var unitTo = ev.target.dataset && ev.target.dataset.unit;
         if (!unitTo) return;
         $('tk-unit').value = unitTo;

@@ -79,11 +79,13 @@
     return new Promise(function (resolve, reject) { api.multiCall(calls, resolve, reject); });
   }
 
-  function loadRaw(api, state, target) {
+  // 画面のグループ選択を優先。未選択なら MyGeotab 上部のグループフィルターに従う
+  function loadRaw(api, state, target, groupId) {
     var dayStart = target;
     var dayEnd = addDays(target, 1);
     var baseStart = addDays(target, -CONFIG.baselineDays);
-    var groups = state && typeof state.getGroupFilter === 'function' ? state.getGroupFilter() : null;
+    var groups = groupId ? [{ id: groupId }]
+      : (state && typeof state.getGroupFilter === 'function' ? state.getGroupFilter() : null);
     var deviceSearch = groups && groups.length ? { groups: groups } : undefined;
     var range = { fromDate: baseStart.toISOString(), toDate: dayEnd.toISOString() };
 
@@ -147,8 +149,10 @@
         ents[key] = {
           id: key,
           name: unit === 'driver' ? (userName[key] || key) : (devName[key] || key),
-          dayKm: 0, baseKm: 0, c: c
+          dayKm: 0, baseKm: 0, c: c,
+          devs: {}, drvs: {}   // 前日にこの対象と組んだ車両／ドライバー（絞り込み用）
         };
+        ents[key][unit === 'driver' ? 'drvs' : 'devs'][key] = 1;
       }
       return ents[key];
     }
@@ -159,19 +163,24 @@
     }
 
     var tripsByDev = {};
+    var driversSeen = {};
     raw.trips.forEach(function (tr) {
       var devId = idOf(tr.device), drvId = idOf(tr.driver);
-      if (drvId && !UNKNOWN_DRIVER[drvId]) {
+      var known = drvId && !UNKNOWN_DRIVER[drvId];
+      if (known) {
         (tripsByDev[devId] = tripsByDev[devId] || []).push({
           s: new Date(tr.start).getTime(), e: new Date(tr.stop || tr.start).getTime(), drv: drvId
         });
       }
       var s = slot(tr.start);
       if (!s) return;
+      if (known) driversSeen[drvId] = 1;
       var key = keyOf(devId, drvId);
       var km = tr.distance || 0;
       if (!key) { if (s === 'day') unknownKm += km; return; }
-      ent(key)[s + 'Km'] += km;
+      var e = ent(key);
+      e[s + 'Km'] += km;
+      if (s === 'day') { e.devs[devId] = 1; if (known) e.drvs[drvId] = 1; }
     });
 
     // 例外イベントにドライバーが付いていない時は、同じ車両・同じ時刻のトリップのドライバーで補う
@@ -207,7 +216,12 @@
         return STATUS[a.status].order - STATUS[b.status].order || String(a.name).localeCompare(String(b.name), 'ja');
       });
 
-    return { rows: rows, unknownKm: unknownKm, diag: diag, rules: raw.rules };
+    var byName = function (a, b) { return String(a.name).localeCompare(String(b.name), 'ja'); };
+    return {
+      rows: rows, unknownKm: unknownKm, diag: diag, rules: raw.rules,
+      vehicleOpts: raw.devices.map(function (d) { return { id: d.id, name: d.name || d.id }; }).sort(byName),
+      driverOpts: Object.keys(driversSeen).map(function (id) { return { id: id, name: userName[id] || id }; }).sort(byName)
+    };
   }
 
   function evaluate(e) {
@@ -284,10 +298,66 @@
         '<div class="rate">平均 ' + fmt1(c.baseRate) + '</div></td>';
     }
 
+    // 車両・ドライバーのプルダウンで絞った行（KPI・一覧・CSVの対象）
+    function filteredRows() {
+      var fDev = $('tk-fdev').value, fDrv = $('tk-fdrv').value;
+      return current.rows.filter(function (r) {
+        return (!fDev || r.devs[fDev]) && (!fDrv || r.drvs[fDrv]);
+      });
+    }
+
+    function fillSelect(sel, allLabel, opts) {
+      var keep = sel.value;
+      sel.innerHTML = '<option value="">' + esc(allLabel) + '</option>' + opts.map(function (o) {
+        return '<option value="' + esc(o.id) + '">' + esc(o.label || o.name) + '</option>';
+      }).join('');
+      sel.value = opts.some(function (o) { return o.id === keep; }) ? keep : '';
+    }
+
+    function populateFilters() {
+      fillSelect($('tk-fdev'), 'すべての車両', current.vehicleOpts);
+      fillSelect($('tk-fdrv'), 'すべてのドライバー', current.driverOpts);
+    }
+
+    var GROUP_STORE_KEY = 'tenkoReport:group';
+    var groupsLoaded = false;
+
+    // グループを会社グループ配下のツリー順に並べ、階層を字下げで表す
+    function groupOptions(groups) {
+      var byId = {};
+      groups.forEach(function (g) { byId[g.id] = g; });
+      var byName = function (a, b) { return String(a.name).localeCompare(String(b.name), 'ja'); };
+      if (!byId.GroupCompanyId) {
+        return groups.slice().sort(byName).map(function (g) { return { id: g.id, label: g.name || g.id }; });
+      }
+      var out = [], seen = {};
+      (function walk(id, depth) {
+        if (seen[id] || !byId[id]) return;
+        seen[id] = 1;
+        if (id !== 'GroupCompanyId') out.push({ id: id, label: Array(depth + 1).join('　') + (byId[id].name || id) });
+        (byId[id].children || []).map(function (c) { return byId[c.id]; }).filter(Boolean).sort(byName)
+          .forEach(function (k) { walk(k.id, id === 'GroupCompanyId' ? 0 : depth + 1); });
+      })('GroupCompanyId', 0);
+      return out;
+    }
+
+    function loadGroups() {
+      if (groupsLoaded) return Promise.resolve();
+      return multiCall(api, [['Get', { typeName: 'Group' }]]).then(function (res) {
+        groupsLoaded = true;
+        fillSelect($('tk-group'), 'すべて', groupOptions(res[0] || []));
+        var saved = store.get(GROUP_STORE_KEY);
+        if (saved && Array.prototype.some.call($('tk-group').options, function (o) { return o.value === saved; })) {
+          $('tk-group').value = saved;
+        }
+      }).catch(function () { /* グループが取れなくても一覧は表示する */ });
+    }
+
     function render() {
       if (!current) return;
       var filter = $('tk-filter').value;
-      var rows = current.rows;
+      var all = current.rows;
+      var rows = filteredRows();
       var counts = { warn: 0, better: 0, checked: 0 };
       rows.forEach(function (r) {
         if (r.status === 'warn') counts.warn++;
@@ -307,7 +377,7 @@
 
       var html = shown.map(function (r) {
         var n = noteOf(r);
-        var idx = rows.indexOf(r);
+        var idx = all.indexOf(r);
         var changes = r.changes.length
           ? '<ul class="tk-changes">' + r.changes.map(function (c) { return '<li class="' + c.trend + '">' + esc(c.text) + '</li>'; }).join('') + '</ul>'
           : '<span class="tk-none">—</span>';
@@ -413,10 +483,11 @@
       $('tk-reload').disabled = true;
       showMsg('データを取得しています…');
       var target = parseYmd($('tk-date').value);
-      loadRaw(api, state, target).then(function (raw) {
+      loadRaw(api, state, target, $('tk-group').value).then(function (raw) {
         current = aggregate(raw, $('tk-unit').value);
         $('tk-period').textContent = periodText(raw, current.unknownKm);
         showMsg(current.rows.length ? '' : '前日に運行した対象がありません。日付・グループ・集計単位を確認してください。');
+        populateFilters();
         render();
         renderDiag();
       }).catch(function (err) {
@@ -442,7 +513,7 @@
       });
       head.push('判定', '確認した変化', '点呼コメント', '確認済');
       var lines = [head];
-      current.rows.forEach(function (r) {
+      filteredRows().forEach(function (r) {
         var n = noteOf(r);
         var line = [r.name, Math.round(r.dayKm), Math.round(r.baseKm)];
         r.cats.forEach(function (c) { line.push(c.day, fmt1(c.dayRate), fmt1(c.baseRate)); });
@@ -474,6 +545,14 @@
       $('tk-date').addEventListener('change', load);
       $('tk-unit').addEventListener('change', load);
       $('tk-filter').addEventListener('change', render);
+      $('tk-group').addEventListener('change', function () {
+        store.set(GROUP_STORE_KEY, $('tk-group').value);
+        $('tk-fdev').value = '';
+        $('tk-fdrv').value = '';
+        load();
+      });
+      $('tk-fdev').addEventListener('change', render);
+      $('tk-fdrv').addEventListener('change', render);
       $('tk-print').addEventListener('click', function () { window.print(); });
       $('tk-csv').addEventListener('click', exportCsv);
 
@@ -526,7 +605,7 @@
       },
       focus: function (freshApi, freshState) {
         api = freshApi; state = freshState;
-        load();
+        loadGroups().then(load);
       },
       blur: function () { }
     };
@@ -590,14 +669,34 @@
 
     return {
       multiCall: function (calls, ok) {
-        var s0 = calls[0][1].search;
-        var data = build(new Date(s0.fromDate), new Date(s0.toDate));
+        // デモのグループ：東京営業所＝車両0〜3、名古屋営業所＝車両4〜7
+        var inGroup = function (devId, groups) {
+          if (!groups || !groups.length) return true;
+          var i = +String(devId).replace('demo-d', '');
+          return groups.some(function (g) {
+            if (g.id === 'demo-g-east' || g.id === 'demo-g-tokyo') return i < 4;
+            if (g.id === 'demo-g-west' || g.id === 'demo-g-nagoya') return i >= 4;
+            return true;
+          });
+        };
+        var tripCall = calls.filter(function (c) { return c[1].typeName === 'Trip'; })[0];
+        var data = tripCall ? build(new Date(tripCall[1].search.fromDate), new Date(tripCall[1].search.toDate)) : null;
+        var groupsOf = function (p) { return p.search && (p.search.groups || (p.search.deviceSearch && p.search.deviceSearch.groups)); };
         var res = calls.map(function (c) {
-          var p = c[1];
-          if (p.typeName === 'Trip') return data.trips;
-          if (p.typeName === 'Device') return people.map(function (x, i) { return { id: 'demo-d' + i, name: x.plate }; });
+          var p = c[1], gs = groupsOf(p);
+          var pick = function (list) { return list.filter(function (x) { return inGroup(idOf(x.device), gs); }); };
+          if (p.typeName === 'Group') return [
+            { id: 'GroupCompanyId', name: 'Company Group', children: [{ id: 'demo-g-east' }, { id: 'demo-g-west' }] },
+            { id: 'demo-g-east', name: '関東エリア', children: [{ id: 'demo-g-tokyo' }] },
+            { id: 'demo-g-tokyo', name: '東京営業所', children: [] },
+            { id: 'demo-g-west', name: '中部エリア', children: [{ id: 'demo-g-nagoya' }] },
+            { id: 'demo-g-nagoya', name: '名古屋営業所', children: [] }
+          ];
+          if (p.typeName === 'Trip') return pick(data.trips);
+          if (p.typeName === 'Device') return people.map(function (x, i) { return { id: 'demo-d' + i, name: x.plate }; })
+            .filter(function (d) { return inGroup(d.id, gs); });
           if (p.typeName === 'User') return people.map(function (x, i) { return { id: 'demo-u' + i, lastName: x.last, firstName: x.first, name: 'demo' + i }; });
-          if (p.typeName === 'ExceptionEvent') return data.ex[p.search.ruleSearch.id] || [];
+          if (p.typeName === 'ExceptionEvent') return pick(data.ex[p.search.ruleSearch.id] || []);
           if (p.typeName === 'Rule') return [
             { id: 'RuleHarshBrakingId', name: '急ブレーキ' }, { id: 'RuleJackrabbitStartsId', name: '急発進' },
             { id: 'RulePostedSpeedingId', name: '速度超過（制限速度）' }, { id: 'RuleIdlingId', name: 'アイドリング' },

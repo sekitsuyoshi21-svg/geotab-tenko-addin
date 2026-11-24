@@ -29,6 +29,8 @@
 #tenko .tk-toolbar label { display: flex; flex-direction: column; font-size: 12px; color: var(--tk-gray); gap: 2px; }
 #tenko .tk-toolbar input, #tenko .tk-toolbar select { font: inherit; font-size: 14px; padding: 5px 8px; border: 1px solid #c5cfdc; border-radius: 6px; background: #fff; color: inherit; }
 #tenko .tk-spacer { flex: 1; }
+#tenko .tk-break { flex-basis: 100%; height: 0; }
+#tenko .tk-toolbar select.tk-wide { min-width: 180px; max-width: 260px; }
 #tenko .tk-btn { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid #c5cfdc; background: #fff; cursor: pointer; }
 #tenko .tk-btn:hover { background: #eef3fa; }
 #tenko .tk-btn.tk-primary { background: var(--tk-blue); color: #fff; border-color: var(--tk-blue); }

@@ -334,44 +334,64 @@
     function renderDiag() {
       var box = $('tk-diag');
       if (!current) { box.hidden = true; return; }
-      var rules = (current.rules || []).slice().sort(function (a, b) {
-        var ha = RULE_HINT.test(a.name || '') ? 0 : 1, hb = RULE_HINT.test(b.name || '') ? 0 : 1;
-        return ha - hb || String(a.name).localeCompare(String(b.name), 'ja');
+      var note = $('tk-diag-note');
+      var allRules = (current.rules || []).slice().sort(function (a, b) {
+        return String(a.name).localeCompare(String(b.name), 'ja');
       });
       var nameOf = {};
-      rules.forEach(function (r) { nameOf[r.id] = r.name; });
+      allRules.forEach(function (r) { nameOf[r.id] = r.name; });
       var unit = $('tk-unit').value;
-      var problems = [];
+      var days = CONFIG.baselineDays + 1;
 
+      // ルールが見つからない項目（＝設定の見直しが必要）
+      var missing = current.diag.filter(function (d) {
+        return d.ruleIds.some(function (x) { return !nameOf[x]; });
+      });
+      var total = 0, assigned = 0;
+      current.diag.forEach(function (d) { total += d.total; assigned += d.assigned; });
+      var weakDriverId = unit === 'driver' && total > 0 && assigned / total < 0.5;
+
+      // ---- 結論（必要な時だけ、一覧の上に表示）----
+      var notes = [];
+      if (missing.length) {
+        notes.push('<p><strong>ルールの設定が必要です。</strong>「' + esc(missing.map(function (d) { return d.label; }).join('」「')) +
+          '」に使うルールがこのデータベースにありません。下の「ルール設定」で選んでください。</p>');
+      }
+      if (weakDriverId) {
+        notes.push('<p><strong>ドライバー識別が不足しています。</strong>' + days + '日間に発生した ' + total + ' 件のうち、ドライバーが分かったのは ' + assigned +
+          ' 件だけです。このためドライバー別ではほとんど0回になります。当面は車両別での確認をおすすめします。</p>' +
+          '<button type="button" class="tk-btn tk-primary" id="tk-to-device">車両別で表示する</button>');
+      }
+      note.innerHTML = notes.join('');
+      note.hidden = !notes.length;
+
+      // ---- ルール設定（詳細・通常は閉じておく）----
       var rowsHtml = current.diag.map(function (d) {
         var id = d.ruleIds[0];
-        var missing = d.ruleIds.filter(function (x) { return !nameOf[x]; });
-        if (missing.length) problems.push(d.label + '：ルールID「' + missing.join('、') + '」が見つかりません');
-        else if (d.total === 0) problems.push(d.label + '：期間内の発生が0件です（ルールが無効か、別のルールを使っている可能性）');
-        else if (unit === 'driver' && d.assigned < d.total) problems.push(d.label + '：' + (d.total - d.assigned) + '件はドライバー未識別のため集計外');
-
-        var opts = '<option value="">既定（' + esc(CONFIG.categories.filter(function (c) { return c.key === d.key; })[0].ruleIds.join(', ')) + '）</option>';
+        var def = CONFIG.categories.filter(function (c) { return c.key === d.key; })[0].ruleIds;
+        var defName = def.map(function (x) { return nameOf[x] || x + '（見つかりません）'; }).join('、');
+        var list = showAllRules ? allRules : allRules.filter(function (r) { return RULE_HINT.test(r.name || '') || r.id === id; });
+        var opts = '<option value="">標準：' + esc(defName) + '</option>';
         if (d.overridden && !nameOf[id]) opts += '<option value="' + esc(id) + '" selected>' + esc(id) + '（見つかりません）</option>';
-        opts += rules.map(function (r) {
+        opts += list.filter(function (r) { return def.indexOf(r.id) < 0; }).map(function (r) {
           return '<option value="' + esc(r.id) + '"' + (d.overridden && r.id === id ? ' selected' : '') + '>' + esc(r.name) + '</option>';
         }).join('');
-
         return '<tr><td>' + esc(d.label) + '</td>' +
-          '<td><select class="tk-rule" data-key="' + d.key + '">' + opts + '</select>' +
-          '<div class="tk-sub">ID: ' + esc(d.ruleIds.join(', ')) + (nameOf[id] ? '（' + esc(nameOf[id]) + '）' : '') + '</div></td>' +
-          '<td class="num">' + d.total + '</td>' +
-          '<td class="num">' + (unit === 'driver' ? d.assigned : '—') + '</td></tr>';
+          '<td><select class="tk-rule" data-key="' + d.key + '">' + opts + '</select></td>' +
+          '<td class="num">' + d.total + ' 件</td>' +
+          (unit === 'driver' ? '<td class="num">' + d.assigned + ' 件</td>' : '') + '</tr>';
       }).join('');
 
       box.hidden = false;
-      box.open = box.open || problems.some(function (p) { return p.indexOf('集計外') < 0; });
-      $('tk-diag-sum').textContent = 'データ診断・ルール設定' + (problems.length ? '（確認事項 ' + problems.length + ' 件）' : '（問題なし）');
+      if (missing.length) box.open = true;
+      $('tk-diag-sum').textContent = 'ルール設定' + (missing.length ? '（要設定）' : '（正常・通常は変更不要）');
       $('tk-diag-body').innerHTML =
-        (problems.length ? '<ul class="tk-diag-problems">' + problems.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul>' : '') +
-        '<table class="tk-diag-table"><thead><tr><th>項目</th><th>使うルール</th><th>期間内の発生件数（全車両）</th><th>うちドライバーに紐付いた件数</th></tr></thead><tbody>' +
-        rowsHtml + '</tbody></table>' +
-        '<p class="tk-sub">ルールの選択はこのブラウザに保存されます。全員に反映するには、表示されたIDを tenkoReport.js の CONFIG に書いてください。ルール名の一致するものを上に並べています。</p>';
+        '<table class="tk-diag-table"><thead><tr><th>項目</th><th>使うルール</th><th>' + days + '日間の発生（全車両）</th>' +
+        (unit === 'driver' ? '<th>うちドライバー判明</th>' : '') + '</tr></thead><tbody>' + rowsHtml + '</tbody></table>' +
+        '<label class="tk-sub"><input type="checkbox" id="tk-allrules"' + (showAllRules ? ' checked' : '') + '> すべてのルールを候補に表示</label>' +
+        '<p class="tk-sub">御社で独自のルール（例：独自の速度超過ルール）を使っている場合だけ選び直してください。選択はこのブラウザに保存されます。</p>';
     }
+    var showAllRules = false;
 
     function autoGrow(ta) {
       ta.style.height = 'auto';
@@ -457,7 +477,13 @@
       $('tk-print').addEventListener('click', function () { window.print(); });
       $('tk-csv').addEventListener('click', exportCsv);
 
+      $('tk-diag-note').addEventListener('click', function (ev) {
+        if (ev.target.id !== 'tk-to-device') return;
+        $('tk-unit').value = 'device';
+        load();
+      });
       $('tk-diag-body').addEventListener('change', function (ev) {
+        if (ev.target.id === 'tk-allrules') { showAllRules = ev.target.checked; renderDiag(); return; }
         if (!ev.target.classList.contains('tk-rule')) return;
         var ov = store.get(RULE_STORE_KEY) || {};
         if (ev.target.value) ov[ev.target.dataset.key] = ev.target.value;
@@ -543,7 +569,8 @@
         people.forEach(function (p, i) {
           var rng = mulberry32(hash(ymd(d) + ':' + i));
           var km = isTarget && p.dayKm ? p.dayKm : Math.round(110 + rng() * 120);
-          var drv = { id: 'demo-u' + i }, dev = { id: 'demo-d' + i };
+          // ?demo=nodriver：ドライバー識別が無い状態を再現
+          var drv = { id: /nodriver/.test(location.search) && i % 4 ? 'UnknownDriverId' : 'demo-u' + i }, dev = { id: 'demo-d' + i };
           var t1 = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 7, 30);
           var t2 = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 13, 10);
           out.trips.push({ device: dev, driver: drv, start: t1.toISOString(), distance: km * 0.55 });

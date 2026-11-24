@@ -92,7 +92,7 @@
     var deviceSearch = groupFiltered ? { groups: groups } : undefined;
     var range = { fromDate: baseStart.toISOString(), toDate: dayEnd.toISOString() };
 
-    var cats = activeCategories();
+    var cats = activeCategories(groupId);
     var ruleIds = [];
     cats.forEach(function (c) {
       c.ruleIds.forEach(function (id) { if (ruleIds.indexOf(id) < 0) ruleIds.push(id); });
@@ -122,9 +122,11 @@
   }
 
   // 画面で選んだルール（このブラウザに保存）があれば CONFIG より優先する
+  // 選択はグループごとに保存（例：三井物産のグループでだけ専用ルールを使う）
   var RULE_STORE_KEY = 'tenkoReport:rules';
-  function activeCategories() {
-    var ov = store.get(RULE_STORE_KEY) || {};
+  function ruleStoreKey(groupId) { return RULE_STORE_KEY + ':' + (groupId || 'all'); }
+  function activeCategories(groupId) {
+    var ov = store.get(ruleStoreKey(groupId)) || {};
     return CONFIG.categories.map(function (c) {
       return { key: c.key, label: c.label, ruleIds: ov[c.key] ? [ov[c.key]] : c.ruleIds, overridden: !!ov[c.key] };
     });
@@ -455,6 +457,28 @@
 
     var RULE_HINT = /ブレーキ|制動|加速|発進|速度|スピード|brak|accel|jackrabbit|speed/i;
 
+    // ルール名の末尾が「 - 会社名」（例：急ブレーキ - 三井物産）のルールは、その会社専用とみなす。
+    // 選んだグループ、またはその上の階層のグループ名に会社名が含まれる時だけ候補に出す
+    var COMPANY_SUFFIX = /\s[-－–—]\s*([^-－–—]+)$/;
+    function selectedGroupNames() {
+      var gid = $('tk-group').value, names = [];
+      if (!gid) return names;
+      var parentOf = {};
+      Object.keys(groupById).forEach(function (pid) {
+        (groupById[pid].children || []).forEach(function (c) { parentOf[c.id] = pid; });
+      });
+      for (var id = gid, n = 0; id && groupById[id] && n < 20; id = parentOf[id], n++) {
+        if (groupById[id].name) names.push(groupById[id].name);
+      }
+      return names;
+    }
+    function ruleFitsGroup(rule) {
+      var m = COMPANY_SUFFIX.exec(rule.name || '');
+      if (!m) return true;   // 会社名の付かないルールはどのグループでも表示
+      var company = m[1].trim();
+      return selectedGroupNames().some(function (n) { return n.indexOf(company) >= 0; });
+    }
+
     function renderDiag() {
       var box = $('tk-diag');
       if (!current) { box.hidden = true; return; }
@@ -494,7 +518,10 @@
         var id = d.ruleIds[0];
         var def = CONFIG.categories.filter(function (c) { return c.key === d.key; })[0].ruleIds;
         var defName = def.map(function (x) { return nameOf[x] || x + '（見つかりません）'; }).join('、');
-        var list = showAllRules ? allRules : allRules.filter(function (r) { return RULE_HINT.test(r.name || '') || r.id === id; });
+        var list = allRules.filter(function (r) {
+          if (r.id === id) return true;   // 選択中のルールは常に残す
+          return ruleFitsGroup(r) && (showAllRules || RULE_HINT.test(r.name || ''));
+        });
         var opts = '<option value="">標準：' + esc(defName) + '</option>';
         if (d.overridden && !nameOf[id]) opts += '<option value="' + esc(id) + '" selected>' + esc(id) + '（見つかりません）</option>';
         opts += list.filter(function (r) { return def.indexOf(r.id) < 0; }).map(function (r) {
@@ -613,10 +640,11 @@
       $('tk-diag-body').addEventListener('change', function (ev) {
         if (ev.target.id === 'tk-allrules') { showAllRules = ev.target.checked; renderDiag(); return; }
         if (!ev.target.classList.contains('tk-rule')) return;
-        var ov = store.get(RULE_STORE_KEY) || {};
+        var key = ruleStoreKey($('tk-group').value);
+        var ov = store.get(key) || {};
         if (ev.target.value) ov[ev.target.dataset.key] = ev.target.value;
         else delete ov[ev.target.dataset.key];
-        store.set(RULE_STORE_KEY, ov);
+        store.set(key, ov);
         load();
       });
 
@@ -755,7 +783,8 @@
           if (p.typeName === 'Rule') return [
             { id: 'RuleHarshBrakingId', name: '急ブレーキ' }, { id: 'RuleJackrabbitStartsId', name: '急発進' },
             { id: 'RulePostedSpeedingId', name: '速度超過（制限速度）' }, { id: 'RuleIdlingId', name: 'アイドリング' },
-            { id: 'demo-custom-speed', name: '速度超過 80km/h（カスタム）' }
+            { id: 'demo-custom-speed', name: '速度超過 80km/h（カスタム）' },
+            { id: 'demo-tokyo-brake', name: '急ブレーキ - 東京営業所' }
           ];
           return [];
         });

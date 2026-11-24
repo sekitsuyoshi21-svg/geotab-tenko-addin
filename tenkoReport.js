@@ -322,21 +322,28 @@
     var GROUP_STORE_KEY = 'tenkoReport:group';
     var groupsLoaded = false;
 
-    // グループを会社グループ配下のツリー順に並べ、階層を字下げで表す
+    // MyGeotab が最初から持つシステムのグループ（Asset Type、燃料種別など）は
+    // ID が「Group…Id」の形。御社で作ったグループはランダムなID（例: b27A5）なので、これで見分ける
+    var SYSTEM_GROUP = /^Group[A-Za-z]+Id$/;
+
+    // 御社で作ったグループだけを、会社グループ配下のツリー順に並べ、階層を字下げで表す
     function groupOptions(groups) {
       var byId = {};
       groups.forEach(function (g) { byId[g.id] = g; });
       var byName = function (a, b) { return String(a.name).localeCompare(String(b.name), 'ja'); };
       if (!byId.GroupCompanyId) {
-        return groups.slice().sort(byName).map(function (g) { return { id: g.id, label: g.name || g.id }; });
+        return groups.filter(function (g) { return !SYSTEM_GROUP.test(g.id); }).sort(byName)
+          .map(function (g) { return { id: g.id, label: g.name || g.id }; });
       }
       var out = [], seen = {};
       (function walk(id, depth) {
         if (seen[id] || !byId[id]) return;
         seen[id] = 1;
-        if (id !== 'GroupCompanyId') out.push({ id: id, label: Array(depth + 1).join('　') + (byId[id].name || id) });
+        var isRoot = id === 'GroupCompanyId';
+        if (!isRoot && SYSTEM_GROUP.test(id)) return;   // システムのグループは配下ごと除外
+        if (!isRoot) out.push({ id: id, label: Array(depth + 1).join('　') + (byId[id].name || id) });
         (byId[id].children || []).map(function (c) { return byId[c.id]; }).filter(Boolean).sort(byName)
-          .forEach(function (k) { walk(k.id, id === 'GroupCompanyId' ? 0 : depth + 1); });
+          .forEach(function (k) { walk(k.id, isRoot ? 0 : depth + 1); });
       })('GroupCompanyId', 0);
       return out;
     }
@@ -686,7 +693,9 @@
           var p = c[1], gs = groupsOf(p);
           var pick = function (list) { return list.filter(function (x) { return inGroup(idOf(x.device), gs); }); };
           if (p.typeName === 'Group') return [
-            { id: 'GroupCompanyId', name: 'Company Group', children: [{ id: 'demo-g-east' }, { id: 'demo-g-west' }] },
+            { id: 'GroupCompanyId', name: 'Company Group', children: [{ id: 'demo-g-east' }, { id: 'demo-g-west' }, { id: 'GroupAssetTypeId' }] },
+            { id: 'GroupAssetTypeId', name: 'Asset Type', children: [{ id: 'GroupVehicleId' }] },
+            { id: 'GroupVehicleId', name: 'Vehicle', children: [] },
             { id: 'demo-g-east', name: '関東エリア', children: [{ id: 'demo-g-tokyo' }] },
             { id: 'demo-g-tokyo', name: '東京営業所', children: [] },
             { id: 'demo-g-west', name: '中部エリア', children: [{ id: 'demo-g-nagoya' }] },

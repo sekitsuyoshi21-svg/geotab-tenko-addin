@@ -1,0 +1,16 @@
+{
+  "name": "点呼支援レポート",
+  "supportEmail": "",
+  "version": "0.1.0",
+  "items": [
+    {
+      "url": "https://sekitsuyoshi21-svg.github.io/geotab-tenko-addin/tenkoReport.html",
+      "path": "ActivityLink/",
+      "menuName": {
+        "ja": "点呼支援レポート",
+        "en": "Roll-call Report"
+      }
+    }
+  ],
+  "isSigned": false
+}

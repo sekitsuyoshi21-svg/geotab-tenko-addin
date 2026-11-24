@@ -1,0 +1,105 @@
+#tenko {
+  --tk-navy: #1f3f73;
+  --tk-blue: #2b6cb0;
+  --tk-teal: #138a72;
+  --tk-red: #c53030;
+  --tk-red-bg: #fff1f0;
+  --tk-green: #16794a;
+  --tk-green-bg: #eefaf3;
+  --tk-gray: #5f6b7a;
+  --tk-line: #dfe5ee;
+  --tk-bg: #f5f7fb;
+  font-family: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+  color: #1c2533;
+  background: var(--tk-bg);
+  padding: 16px 20px 24px;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+#tenko *, #tenko *::before, #tenko *::after { box-sizing: border-box; }
+
+#tenko .tk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+#tenko h1 { font-size: 22px; margin: 0; color: var(--tk-navy); }
+#tenko .tk-lead { margin: 2px 0 0; color: var(--tk-gray); }
+#tenko .tk-demo { background: #fff4d6; color: #8a5a00; border: 1px solid #f0d48a; border-radius: 999px; padding: 2px 12px; font-size: 12px; white-space: nowrap; }
+
+#tenko .tk-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 16px 0 6px; padding: 12px; background: #fff; border: 1px solid var(--tk-line); border-radius: 8px; }
+#tenko .tk-toolbar label { display: flex; flex-direction: column; font-size: 12px; color: var(--tk-gray); gap: 2px; }
+#tenko .tk-toolbar input, #tenko .tk-toolbar select { font: inherit; font-size: 14px; padding: 5px 8px; border: 1px solid #c5cfdc; border-radius: 6px; background: #fff; color: inherit; }
+#tenko .tk-spacer { flex: 1; }
+#tenko .tk-btn { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid #c5cfdc; background: #fff; cursor: pointer; }
+#tenko .tk-btn:hover { background: #eef3fa; }
+#tenko .tk-btn.tk-primary { background: var(--tk-blue); color: #fff; border-color: var(--tk-blue); }
+#tenko .tk-btn.tk-primary:hover { background: var(--tk-navy); }
+#tenko .tk-btn:disabled { opacity: .5; cursor: default; }
+
+#tenko .tk-period { color: var(--tk-gray); font-size: 12px; margin: 4px 2px 12px; }
+
+#tenko .tk-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+#tenko .tk-kpi { background: #fff; border: 1px solid var(--tk-line); border-radius: 8px; padding: 10px 14px; }
+#tenko .tk-kpi span { display: block; font-size: 12px; color: var(--tk-gray); }
+#tenko .tk-kpi strong { font-size: 24px; font-variant-numeric: tabular-nums; }
+#tenko .tk-kpi.warn strong { color: var(--tk-red); }
+#tenko .tk-kpi.better strong { color: var(--tk-green); }
+
+#tenko .tk-msg { padding: 10px 14px; border-radius: 8px; background: #fff; border: 1px solid var(--tk-line); margin-bottom: 12px; }
+#tenko .tk-msg.err { background: var(--tk-red-bg); border-color: #f3c2c2; color: var(--tk-red); }
+
+#tenko .tk-tablewrap { overflow-x: auto; background: #fff; border: 1px solid var(--tk-line); border-radius: 8px; }
+#tenko .tk-table { width: 100%; border-collapse: collapse; min-width: 1050px; }
+#tenko .tk-table th { background: #eaf0f8; color: var(--tk-navy); font-size: 12px; text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--tk-line); white-space: nowrap; }
+#tenko .tk-table td { padding: 10px; border-bottom: 1px solid var(--tk-line); vertical-align: top; }
+#tenko .tk-table tr.st-warn td:first-child { box-shadow: inset 4px 0 0 var(--tk-red); }
+#tenko .tk-table tr.st-better td:first-child { box-shadow: inset 4px 0 0 var(--tk-green); }
+#tenko .tk-table tr.is-checked { background: #fafbfd; }
+#tenko .tk-table tr.is-checked td { color: #6b7685; }
+
+#tenko .tk-name { font-weight: 700; }
+#tenko .tk-sub { font-size: 12px; color: var(--tk-gray); font-variant-numeric: tabular-nums; }
+
+#tenko .tk-cell .cnt { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+#tenko .tk-cell .cnt small { font-size: 12px; font-weight: 400; margin-left: 1px; }
+#tenko .tk-cell .rate { font-size: 11px; color: var(--tk-gray); font-variant-numeric: tabular-nums; white-space: nowrap; }
+#tenko .tk-cell.up .cnt { color: var(--tk-red); }
+#tenko .tk-cell.down .cnt { color: var(--tk-green); }
+#tenko .tk-arrow { font-size: 12px; margin-left: 4px; }
+
+#tenko .tk-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; background: #eef1f5; color: var(--tk-gray); }
+#tenko .tk-badge.warn { background: var(--tk-red-bg); color: var(--tk-red); }
+#tenko .tk-badge.better { background: var(--tk-green-bg); color: var(--tk-green); }
+#tenko .tk-badge.good { background: #e8f1fc; color: var(--tk-blue); }
+#tenko .tk-badge.low { background: #fff4d6; color: #8a5a00; }
+
+#tenko .tk-changes { margin: 0; padding: 0; list-style: none; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#tenko .tk-changes li.up { color: var(--tk-red); }
+#tenko .tk-changes li.down { color: var(--tk-green); }
+#tenko .tk-none { color: #9aa4b1; font-size: 12px; }
+
+#tenko .tk-col-comment { width: 34%; min-width: 300px; }
+#tenko textarea { width: 100%; min-height: 58px; font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid #c5cfdc; border-radius: 6px; resize: vertical; background: #fff; color: inherit; }
+#tenko textarea.edited { border-color: var(--tk-blue); background: #f6faff; }
+#tenko .tk-reset { border: 0; background: none; color: var(--tk-blue); font-size: 12px; cursor: pointer; padding: 2px 0; }
+#tenko .tk-reset[hidden] { display: none; }
+#tenko .tk-check { width: 20px; height: 20px; cursor: pointer; }
+#tenko .print-only { display: none; }
+
+#tenko .tk-foot { margin-top: 14px; color: var(--tk-gray); font-size: 12px; }
+#tenko .tk-foot p { margin: 2px 0; }
+
+@media (max-width: 700px) {
+  #tenko { padding: 12px 16px; }
+  #tenko .tk-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #tenko .tk-spacer { display: none; }
+}
+
+@media print {
+  #tenko { background: #fff; padding: 0; min-height: 0; }
+  #tenko .tk-toolbar, #tenko .tk-demo, #tenko .tk-reset { display: none !important; }
+  #tenko .tk-tablewrap { overflow: visible; border: 0; }
+  #tenko .tk-table { min-width: 0; font-size: 11px; }
+  #tenko .tk-table tr { break-inside: avoid; }
+  #tenko textarea { display: none; }
+  #tenko .print-only { display: block; white-space: pre-wrap; }
+}

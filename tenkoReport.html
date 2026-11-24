@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>点呼支援レポート</title>
+  <link rel="stylesheet" href="tenkoReport.css">
+</head>
+<body>
+<div id="tenko">
+  <header class="tk-head">
+    <div>
+      <h1>点呼支援レポート</h1>
+      <p class="tk-lead">本人の過去と比較し、運転の変化を翌朝の点呼につなげます</p>
+    </div>
+    <span id="tk-demo" class="tk-demo" hidden>デモデータ</span>
+  </header>
+
+  <section class="tk-toolbar">
+    <label>運行日（前日）
+      <input type="date" id="tk-date">
+    </label>
+    <label>集計単位
+      <select id="tk-unit">
+        <option value="driver">ドライバー</option>
+        <option value="device">車両</option>
+      </select>
+    </label>
+    <label>表示
+      <select id="tk-filter">
+        <option value="all">すべて</option>
+        <option value="changed">注意・改善のみ</option>
+        <option value="unchecked">未確認のみ</option>
+      </select>
+    </label>
+    <button id="tk-reload" class="tk-btn tk-primary">更新</button>
+    <span class="tk-spacer"></span>
+    <button id="tk-csv" class="tk-btn">CSV出力</button>
+    <button id="tk-print" class="tk-btn">印刷</button>
+  </section>
+
+  <p id="tk-period" class="tk-period"></p>
+
+  <section class="tk-kpis">
+    <div class="tk-kpi"><span>点呼対象</span><strong id="k-total">–</strong></div>
+    <div class="tk-kpi warn"><span>注意</span><strong id="k-warn">–</strong></div>
+    <div class="tk-kpi better"><span>改善</span><strong id="k-better">–</strong></div>
+    <div class="tk-kpi"><span>確認済</span><strong id="k-checked">–</strong></div>
+  </section>
+
+  <div id="tk-msg" class="tk-msg" hidden></div>
+
+  <div class="tk-tablewrap">
+    <table class="tk-table">
+      <thead>
+        <tr>
+          <th>対象</th>
+          <th id="th-cat0"></th>
+          <th id="th-cat1"></th>
+          <th id="th-cat2"></th>
+          <th>判定</th>
+          <th>確認した変化</th>
+          <th class="tk-col-comment">点呼コメント（編集可）</th>
+          <th>確認</th>
+        </tr>
+      </thead>
+      <tbody id="tk-body"></tbody>
+    </table>
+  </div>
+
+  <footer class="tk-foot">
+    <p id="tk-rule"></p>
+    <p>※数値・コメントは確認の補助です。走行条件（道路・天候・積載など）も踏まえて管理者が判断してください。</p>
+    <p>※運転傾向の変化を確認するための支援であり、事故の予測や防止を保証するものではありません。</p>
+  </footer>
+</div>
+<script src="tenkoReport.js"></script>
+</body>
+</html>

@@ -130,12 +130,23 @@
     });
   }
 
+  // ドライバーの表示名。
+  // 漢字・かなの名前は MyGeotab 上で「名」欄に姓、「姓」欄に名が入っていることが多いため、
+  // MyGeotab の画面と同じ「firstName lastName」の順（例：沢津橋 貴之）で表示する。
+  // ローマ字の名前は「lastName firstName」（例：Maekawa Tomoya）のまま。
+  var CJK = /[぀-ヿ㐀-鿿豈-﫿]/;
+  function displayName(u) {
+    var first = (u.firstName || '').trim(), last = (u.lastName || '').trim();
+    var parts = CJK.test(first + last) ? [first, last] : [last, first];
+    return parts.filter(Boolean).join(' ') || u.name || u.id;
+  }
+
   // ===== 集計・判定 =======================================================
   function aggregate(raw, unit) {
     var devName = {}, userName = {};
     raw.devices.forEach(function (d) { devName[d.id] = d.name; });
     raw.users.forEach(function (u) {
-      userName[u.id] = ((u.lastName || '') + ' ' + (u.firstName || '')).trim() || u.name;
+      userName[u.id] = displayName(u);
     });
 
     var ents = {};
@@ -468,7 +479,7 @@
       var notes = [];
       if (missing.length) {
         notes.push('<p><strong>ルールの設定が必要です。</strong>「' + esc(missing.map(function (d) { return d.label; }).join('」「')) +
-          '」に使うルールがこのデータベースにありません。下の「ルール設定」で選んでください。</p>');
+          '」に使うルールがこのデータベースにありません。上の「判定に使うルール」で選んでください。</p>');
       }
       if (weakDriverId) {
         notes.push('<p><strong>ドライバー識別が不足しています。</strong>' + days + '日間に発生した ' + total + ' 件のうち、ドライバーが分かったのは ' + assigned +
@@ -478,7 +489,7 @@
       note.innerHTML = notes.join('');
       note.hidden = !notes.length;
 
-      // ---- ルール設定（詳細・通常は閉じておく）----
+      // ---- 判定に使うルール（急ブレーキ・急加速・速度超過のプルダウン）----
       var rowsHtml = current.diag.map(function (d) {
         var id = d.ruleIds[0];
         var def = CONFIG.categories.filter(function (c) { return c.key === d.key; })[0].ruleIds;
@@ -489,20 +500,15 @@
         opts += list.filter(function (r) { return def.indexOf(r.id) < 0; }).map(function (r) {
           return '<option value="' + esc(r.id) + '"' + (d.overridden && r.id === id ? ' selected' : '') + '>' + esc(r.name) + '</option>';
         }).join('');
-        return '<tr><td>' + esc(d.label) + '</td>' +
-          '<td><select class="tk-rule" data-key="' + d.key + '">' + opts + '</select></td>' +
-          '<td class="num">' + d.total + ' 件</td>' +
-          (unit === 'driver' ? '<td class="num">' + d.assigned + ' 件</td>' : '') + '</tr>';
+        var count = days + '日間 ' + d.total + '件' + (unit === 'driver' ? '（うちドライバー判明 ' + d.assigned + '件）' : '');
+        return '<label>' + esc(d.label) +
+          '<select class="tk-rule tk-wide" data-key="' + d.key + '">' + opts + '</select>' +
+          '<span class="tk-rule-count' + (d.total === 0 ? ' zero' : '') + '">' + esc(count) + '</span></label>';
       }).join('');
 
       box.hidden = false;
-      if (missing.length) box.open = true;
-      $('tk-diag-sum').textContent = 'ルール設定' + (missing.length ? '（要設定）' : '（正常・通常は変更不要）');
-      $('tk-diag-body').innerHTML =
-        '<table class="tk-diag-table"><thead><tr><th>項目</th><th>使うルール</th><th>' + days + '日間の発生（全車両）</th>' +
-        (unit === 'driver' ? '<th>うちドライバー判明</th>' : '') + '</tr></thead><tbody>' + rowsHtml + '</tbody></table>' +
-        '<label class="tk-sub"><input type="checkbox" id="tk-allrules"' + (showAllRules ? ' checked' : '') + '> すべてのルールを候補に表示</label>' +
-        '<p class="tk-sub">御社で独自のルール（例：独自の速度超過ルール）を使っている場合だけ選び直してください。選択はこのブラウザに保存されます。</p>';
+      $('tk-diag-body').innerHTML = rowsHtml +
+        '<label class="tk-allrules"><span><input type="checkbox" id="tk-allrules"' + (showAllRules ? ' checked' : '') + '> すべてのルールを候補に表示</span></label>';
     }
     var showAllRules = false;
 
@@ -741,9 +747,10 @@
           if (p.typeName === 'Device') return people.map(function (x, i) { return { id: 'demo-d' + i, name: x.plate }; })
             .filter(function (d) { return inGroup(d.id, gs); });
           if (p.typeName === 'User') return people.map(function (x, i) {
-            return { id: 'demo-u' + i, lastName: x.last, firstName: x.first, name: 'demo' + i,
+            // 実データと同じく、漢字の名前は firstName に姓・lastName に名が入っている想定
+            return { id: 'demo-u' + i, firstName: x.last, lastName: x.first, name: 'demo' + i,
               companyGroups: [{ id: i < 4 ? 'demo-g-tokyo' : 'demo-g-nagoya' }] };
-          }).concat([{ id: 'demo-u-extra', lastName: '小林', firstName: '亮', name: 'demo-extra', companyGroups: [{ id: 'demo-g-tokyo' }] }]);
+          }).concat([{ id: 'demo-u-extra', firstName: '小林', lastName: '亮', name: 'demo-extra', companyGroups: [{ id: 'demo-g-tokyo' }] }]);
           if (p.typeName === 'ExceptionEvent') return pick(data.ex[p.search.ruleSearch.id] || []);
           if (p.typeName === 'Rule') return [
             { id: 'RuleHarshBrakingId', name: '急ブレーキ' }, { id: 'RuleJackrabbitStartsId', name: '急発進' },

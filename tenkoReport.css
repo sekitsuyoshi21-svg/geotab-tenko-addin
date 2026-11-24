@@ -51,6 +51,14 @@
 
 #tenko .tk-diag { background: #fff; border: 1px solid var(--tk-line); border-radius: 8px; padding: 8px 14px; margin-bottom: 12px; }
 #tenko .tk-diag summary { cursor: pointer; font-weight: 700; color: var(--tk-navy); }
+#tenko .tk-rulebar { background: #fff; border: 1px solid var(--tk-line); border-radius: 8px; padding: 10px 12px; margin: 8px 0 6px; }
+#tenko .tk-rulebar-title { font-size: 12px; font-weight: 700; color: var(--tk-navy); margin-bottom: 6px; }
+#tenko .tk-rulebar-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 20px; }
+#tenko .tk-rulebar-body label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--tk-gray); }
+#tenko .tk-rulebar-body select { font: inherit; font-size: 14px; padding: 5px 8px; border: 1px solid #c5cfdc; border-radius: 6px; background: #fff; color: #1c2533; min-width: 200px; max-width: 280px; }
+#tenko .tk-rule-count { font-size: 11px; }
+#tenko .tk-rule-count.zero { color: #8a5a00; }
+#tenko .tk-allrules { align-self: center; }
 #tenko .tk-diag-note { background: #fff8e6; border: 1px solid #f0d48a; border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; }
 #tenko .tk-diag-note p { margin: 0 0 8px; }
 #tenko .tk-diag summary { font-weight: 400; font-size: 13px; }
@@ -109,7 +117,7 @@
 
 @media print {
   #tenko { background: #fff; padding: 0; min-height: 0; }
-  #tenko .tk-toolbar, #tenko .tk-demo, #tenko .tk-reset, #tenko .tk-diag, #tenko .tk-diag-note { display: none !important; }
+  #tenko .tk-toolbar, #tenko .tk-demo, #tenko .tk-reset, #tenko .tk-diag, #tenko .tk-diag-note, #tenko .tk-rulebar { display: none !important; }
   #tenko .tk-tablewrap { overflow: visible; border: 0; }
   #tenko .tk-table { min-width: 0; font-size: 11px; }
   #tenko .tk-table tr { break-inside: avoid; }

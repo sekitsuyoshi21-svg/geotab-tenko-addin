@@ -86,7 +86,10 @@
     var baseStart = addDays(target, -CONFIG.baselineDays);
     var groups = groupId ? [{ id: groupId }]
       : (state && typeof state.getGroupFilter === 'function' ? state.getGroupFilter() : null);
-    var deviceSearch = groups && groups.length ? { groups: groups } : undefined;
+    var groupFiltered = !!(groups && groups.length);
+    // 注意：Trip / ExceptionEvent の検索は deviceSearch のグループ指定が効かない（車両IDのみ有効）。
+    // そのためグループは Device の検索だけに使い、トリップとイベントは集計時に車両で絞り込む
+    var deviceSearch = groupFiltered ? { groups: groups } : undefined;
     var range = { fromDate: baseStart.toISOString(), toDate: dayEnd.toISOString() };
 
     var cats = activeCategories();
@@ -96,14 +99,14 @@
     });
 
     var calls = [
-      ['Get', { typeName: 'Trip', search: { fromDate: range.fromDate, toDate: range.toDate, deviceSearch: deviceSearch } }],
+      ['Get', { typeName: 'Trip', search: { fromDate: range.fromDate, toDate: range.toDate } }],
       ['Get', { typeName: 'Device', search: deviceSearch || {} }],
       ['Get', { typeName: 'User', search: { isDriver: true } }],
       ['Get', { typeName: 'Rule' }]
     ];
     ruleIds.forEach(function (id) {
       calls.push(['Get', { typeName: 'ExceptionEvent', search: {
-        fromDate: range.fromDate, toDate: range.toDate, ruleSearch: { id: id }, deviceSearch: deviceSearch
+        fromDate: range.fromDate, toDate: range.toDate, ruleSearch: { id: id }
       } }]);
     });
 
@@ -112,7 +115,8 @@
       ruleIds.forEach(function (id, i) { byRule[id] = res[4 + i] || []; });
       return {
         trips: res[0] || [], devices: res[1] || [], users: res[2] || [], rules: res[3] || [],
-        categories: cats, exceptionsByRule: byRule, dayStart: dayStart, dayEnd: dayEnd, baseStart: baseStart
+        categories: cats, exceptionsByRule: byRule, dayStart: dayStart, dayEnd: dayEnd, baseStart: baseStart,
+        groupFiltered: groupFiltered
       };
     });
   }
@@ -164,8 +168,17 @@
 
     var tripsByDev = {};
     var driversSeen = {};
+    // グループ指定時は、そのグループの車両（Device の検索結果）のデータだけを集計する
+    var allowedDev = null;
+    if (raw.groupFiltered) {
+      allowedDev = {};
+      raw.devices.forEach(function (d) { allowedDev[d.id] = 1; });
+    }
+    var inScope = function (devId) { return !allowedDev || !!allowedDev[devId]; };
+
     raw.trips.forEach(function (tr) {
       var devId = idOf(tr.device), drvId = idOf(tr.driver);
+      if (!inScope(devId)) return;
       var known = drvId && !UNKNOWN_DRIVER[drvId];
       if (known) {
         (tripsByDev[devId] = tripsByDev[devId] || []).push({
@@ -197,8 +210,9 @@
         (raw.exceptionsByRule[rid] || []).forEach(function (ev) {
           var s = slot(ev.activeFrom);
           if (!s) return;
-          total++;
           var devId = idOf(ev.device), drvId = idOf(ev.driver);
+          if (!inScope(devId)) return;
+          total++;
           if (unit === 'driver' && (!drvId || UNKNOWN_DRIVER[drvId])) drvId = driverFromTrip(devId, ev.activeFrom);
           var key = keyOf(devId, drvId);
           if (!key) return;

@@ -87,15 +87,17 @@
     var deviceSearch = groups && groups.length ? { groups: groups } : undefined;
     var range = { fromDate: baseStart.toISOString(), toDate: dayEnd.toISOString() };
 
+    var cats = activeCategories();
     var ruleIds = [];
-    CONFIG.categories.forEach(function (c) {
+    cats.forEach(function (c) {
       c.ruleIds.forEach(function (id) { if (ruleIds.indexOf(id) < 0) ruleIds.push(id); });
     });
 
     var calls = [
       ['Get', { typeName: 'Trip', search: { fromDate: range.fromDate, toDate: range.toDate, deviceSearch: deviceSearch } }],
       ['Get', { typeName: 'Device', search: deviceSearch || {} }],
-      ['Get', { typeName: 'User', search: { isDriver: true } }]
+      ['Get', { typeName: 'User', search: { isDriver: true } }],
+      ['Get', { typeName: 'Rule' }]
     ];
     ruleIds.forEach(function (id) {
       calls.push(['Get', { typeName: 'ExceptionEvent', search: {
@@ -105,11 +107,20 @@
 
     return multiCall(api, calls).then(function (res) {
       var byRule = {};
-      ruleIds.forEach(function (id, i) { byRule[id] = res[3 + i] || []; });
+      ruleIds.forEach(function (id, i) { byRule[id] = res[4 + i] || []; });
       return {
-        trips: res[0] || [], devices: res[1] || [], users: res[2] || [],
-        exceptionsByRule: byRule, dayStart: dayStart, dayEnd: dayEnd, baseStart: baseStart
+        trips: res[0] || [], devices: res[1] || [], users: res[2] || [], rules: res[3] || [],
+        categories: cats, exceptionsByRule: byRule, dayStart: dayStart, dayEnd: dayEnd, baseStart: baseStart
       };
+    });
+  }
+
+  // 画面で選んだルール（このブラウザに保存）があれば CONFIG より優先する
+  var RULE_STORE_KEY = 'tenkoReport:rules';
+  function activeCategories() {
+    var ov = store.get(RULE_STORE_KEY) || {};
+    return CONFIG.categories.map(function (c) {
+      return { key: c.key, label: c.label, ruleIds: ov[c.key] ? [ov[c.key]] : c.ruleIds, overridden: !!ov[c.key] };
     });
   }
 
@@ -147,25 +158,46 @@
       return t >= t1 ? 'day' : 'base';
     }
 
+    var tripsByDev = {};
     raw.trips.forEach(function (tr) {
+      var devId = idOf(tr.device), drvId = idOf(tr.driver);
+      if (drvId && !UNKNOWN_DRIVER[drvId]) {
+        (tripsByDev[devId] = tripsByDev[devId] || []).push({
+          s: new Date(tr.start).getTime(), e: new Date(tr.stop || tr.start).getTime(), drv: drvId
+        });
+      }
       var s = slot(tr.start);
       if (!s) return;
-      var key = keyOf(idOf(tr.device), idOf(tr.driver));
+      var key = keyOf(devId, drvId);
       var km = tr.distance || 0;
       if (!key) { if (s === 'day') unknownKm += km; return; }
       ent(key)[s + 'Km'] += km;
     });
 
-    CONFIG.categories.forEach(function (cat) {
+    // 例外イベントにドライバーが付いていない時は、同じ車両・同じ時刻のトリップのドライバーで補う
+    function driverFromTrip(devId, time) {
+      var t = new Date(time).getTime();
+      var list = tripsByDev[devId] || [];
+      for (var i = 0; i < list.length; i++) { if (t >= list[i].s && t <= list[i].e) return list[i].drv; }
+      return null;
+    }
+
+    var diag = raw.categories.map(function (cat) {
+      var total = 0, assigned = 0;
       cat.ruleIds.forEach(function (rid) {
         (raw.exceptionsByRule[rid] || []).forEach(function (ev) {
           var s = slot(ev.activeFrom);
           if (!s) return;
-          var key = keyOf(idOf(ev.device), idOf(ev.driver));
+          total++;
+          var devId = idOf(ev.device), drvId = idOf(ev.driver);
+          if (unit === 'driver' && (!drvId || UNKNOWN_DRIVER[drvId])) drvId = driverFromTrip(devId, ev.activeFrom);
+          var key = keyOf(devId, drvId);
           if (!key) return;
+          assigned++;
           ent(key).c[cat.key][s]++;
         });
       });
+      return { key: cat.key, label: cat.label, ruleIds: cat.ruleIds, overridden: cat.overridden, total: total, assigned: assigned };
     });
 
     var rows = Object.keys(ents).map(function (k) { return ents[k]; })
@@ -175,7 +207,7 @@
         return STATUS[a.status].order - STATUS[b.status].order || String(a.name).localeCompare(String(b.name), 'ja');
       });
 
-    return { rows: rows, unknownKm: unknownKm };
+    return { rows: rows, unknownKm: unknownKm, diag: diag, rules: raw.rules };
   }
 
   function evaluate(e) {
@@ -297,6 +329,50 @@
       Array.prototype.forEach.call(document.querySelectorAll('#tenko .tk-comment'), autoGrow);
     }
 
+    var RULE_HINT = /ブレーキ|制動|加速|発進|速度|スピード|brak|accel|jackrabbit|speed/i;
+
+    function renderDiag() {
+      var box = $('tk-diag');
+      if (!current) { box.hidden = true; return; }
+      var rules = (current.rules || []).slice().sort(function (a, b) {
+        var ha = RULE_HINT.test(a.name || '') ? 0 : 1, hb = RULE_HINT.test(b.name || '') ? 0 : 1;
+        return ha - hb || String(a.name).localeCompare(String(b.name), 'ja');
+      });
+      var nameOf = {};
+      rules.forEach(function (r) { nameOf[r.id] = r.name; });
+      var unit = $('tk-unit').value;
+      var problems = [];
+
+      var rowsHtml = current.diag.map(function (d) {
+        var id = d.ruleIds[0];
+        var missing = d.ruleIds.filter(function (x) { return !nameOf[x]; });
+        if (missing.length) problems.push(d.label + '：ルールID「' + missing.join('、') + '」が見つかりません');
+        else if (d.total === 0) problems.push(d.label + '：期間内の発生が0件です（ルールが無効か、別のルールを使っている可能性）');
+        else if (unit === 'driver' && d.assigned < d.total) problems.push(d.label + '：' + (d.total - d.assigned) + '件はドライバー未識別のため集計外');
+
+        var opts = '<option value="">既定（' + esc(CONFIG.categories.filter(function (c) { return c.key === d.key; })[0].ruleIds.join(', ')) + '）</option>';
+        if (d.overridden && !nameOf[id]) opts += '<option value="' + esc(id) + '" selected>' + esc(id) + '（見つかりません）</option>';
+        opts += rules.map(function (r) {
+          return '<option value="' + esc(r.id) + '"' + (d.overridden && r.id === id ? ' selected' : '') + '>' + esc(r.name) + '</option>';
+        }).join('');
+
+        return '<tr><td>' + esc(d.label) + '</td>' +
+          '<td><select class="tk-rule" data-key="' + d.key + '">' + opts + '</select>' +
+          '<div class="tk-sub">ID: ' + esc(d.ruleIds.join(', ')) + (nameOf[id] ? '（' + esc(nameOf[id]) + '）' : '') + '</div></td>' +
+          '<td class="num">' + d.total + '</td>' +
+          '<td class="num">' + (unit === 'driver' ? d.assigned : '—') + '</td></tr>';
+      }).join('');
+
+      box.hidden = false;
+      box.open = box.open || problems.some(function (p) { return p.indexOf('集計外') < 0; });
+      $('tk-diag-sum').textContent = 'データ診断・ルール設定' + (problems.length ? '（確認事項 ' + problems.length + ' 件）' : '（問題なし）');
+      $('tk-diag-body').innerHTML =
+        (problems.length ? '<ul class="tk-diag-problems">' + problems.map(function (p) { return '<li>' + esc(p) + '</li>'; }).join('') + '</ul>' : '') +
+        '<table class="tk-diag-table"><thead><tr><th>項目</th><th>使うルール</th><th>期間内の発生件数（全車両）</th><th>うちドライバーに紐付いた件数</th></tr></thead><tbody>' +
+        rowsHtml + '</tbody></table>' +
+        '<p class="tk-sub">ルールの選択はこのブラウザに保存されます。全員に反映するには、表示されたIDを tenkoReport.js の CONFIG に書いてください。ルール名の一致するものを上に並べています。</p>';
+    }
+
     function autoGrow(ta) {
       ta.style.height = 'auto';
       ta.style.height = (ta.scrollHeight + 2) + 'px';
@@ -322,6 +398,7 @@
         $('tk-period').textContent = periodText(raw, current.unknownKm);
         showMsg(current.rows.length ? '' : '前日に運行した対象がありません。日付・グループ・集計単位を確認してください。');
         render();
+        renderDiag();
       }).catch(function (err) {
         current = null;
         $('tk-body').innerHTML = '';
@@ -379,6 +456,15 @@
       $('tk-filter').addEventListener('change', render);
       $('tk-print').addEventListener('click', function () { window.print(); });
       $('tk-csv').addEventListener('click', exportCsv);
+
+      $('tk-diag-body').addEventListener('change', function (ev) {
+        if (!ev.target.classList.contains('tk-rule')) return;
+        var ov = store.get(RULE_STORE_KEY) || {};
+        if (ev.target.value) ov[ev.target.dataset.key] = ev.target.value;
+        else delete ov[ev.target.dataset.key];
+        store.set(RULE_STORE_KEY, ov);
+        load();
+      });
 
       var body = $('tk-body');
       body.addEventListener('input', function (ev) {
@@ -485,6 +571,11 @@
           if (p.typeName === 'Device') return people.map(function (x, i) { return { id: 'demo-d' + i, name: x.plate }; });
           if (p.typeName === 'User') return people.map(function (x, i) { return { id: 'demo-u' + i, lastName: x.last, firstName: x.first, name: 'demo' + i }; });
           if (p.typeName === 'ExceptionEvent') return data.ex[p.search.ruleSearch.id] || [];
+          if (p.typeName === 'Rule') return [
+            { id: 'RuleHarshBrakingId', name: '急ブレーキ' }, { id: 'RuleJackrabbitStartsId', name: '急発進' },
+            { id: 'RulePostedSpeedingId', name: '速度超過（制限速度）' }, { id: 'RuleIdlingId', name: 'アイドリング' },
+            { id: 'demo-custom-speed', name: '速度超過 80km/h（カスタム）' }
+          ];
           return [];
         });
         setTimeout(function () { ok(res); }, 250);

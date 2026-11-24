@@ -219,7 +219,7 @@
     }
 
     var diag = raw.categories.map(function (cat) {
-      var total = 0, assigned = 0;
+      var total = 0, assigned = 0, known = 0;
       cat.ruleIds.forEach(function (rid) {
         (raw.exceptionsByRule[rid] || []).forEach(function (ev) {
           var s = slot(ev.activeFrom);
@@ -227,14 +227,15 @@
           var devId = idOf(ev.device), drvId = idOf(ev.driver);
           if (!inScope(devId)) return;
           total++;
-          if (unit === 'driver' && (!drvId || UNKNOWN_DRIVER[drvId])) drvId = driverFromTrip(devId, ev.activeFrom);
+          if (!drvId || UNKNOWN_DRIVER[drvId]) drvId = driverFromTrip(devId, ev.activeFrom);
+          if (drvId) known++;   // 集計単位に関係なく、ドライバーが分かった件数
           var key = keyOf(devId, drvId);
           if (!key) return;
           assigned++;
           ent(key).c[cat.key][s]++;
         });
       });
-      return { key: cat.key, label: cat.label, ruleIds: cat.ruleIds, overridden: cat.overridden, total: total, assigned: assigned };
+      return { key: cat.key, label: cat.label, ruleIds: cat.ruleIds, overridden: cat.overridden, total: total, assigned: assigned, known: known };
     });
 
     var rows = Object.keys(ents).map(function (k) { return ents[k]; })
@@ -496,9 +497,9 @@
       var missing = current.diag.filter(function (d) {
         return d.ruleIds.some(function (x) { return !nameOf[x]; });
       });
-      var total = 0, assigned = 0;
-      current.diag.forEach(function (d) { total += d.total; assigned += d.assigned; });
-      var weakDriverId = unit === 'driver' && total > 0 && assigned / total < 0.5;
+      var total = 0, known = 0;
+      current.diag.forEach(function (d) { total += d.total; known += d.known; });
+      var weakDriverId = total > 0 && known / total < 0.5;
 
       // ---- 結論（必要な時だけ、一覧の上に表示）----
       var notes = [];
@@ -507,9 +508,13 @@
           '」に使うルールがこのデータベースにありません。上の「判定に使うルール」で選んでください。</p>');
       }
       if (weakDriverId) {
-        notes.push('<p><strong>ドライバー識別が不足しています。</strong>' + days + '日間に発生した ' + total + ' 件のうち、ドライバーが分かったのは ' + assigned +
-          ' 件だけです。このためドライバー別ではほとんど0回になります。当面は車両別での確認をおすすめします。</p>' +
-          '<button type="button" class="tk-btn tk-primary" id="tk-to-device">車両別で表示する</button>');
+        var head = '<p><strong>ドライバー識別が不足しています。</strong>' + days + '日間に発生した ' + total +
+          ' 件のうち、ドライバーが分かったのは ' + known + ' 件だけです。';
+        notes.push(unit === 'device'
+          ? head + 'このため車両別で表示しています。ドライバー別にすると、ほとんど0回になります。</p>' +
+            '<button type="button" class="tk-btn tk-primary" data-unit="driver">ドライバー別で表示する</button>'
+          : head + 'このためドライバー別ではほとんど0回になります。当面は車両別での確認をおすすめします。</p>' +
+            '<button type="button" class="tk-btn tk-primary" data-unit="device">車両別で表示する</button>');
       }
       note.innerHTML = notes.join('');
       note.hidden = !notes.length;
@@ -529,7 +534,7 @@
         opts += list.filter(function (r) { return def.indexOf(r.id) < 0; }).map(function (r) {
           return '<option value="' + esc(r.id) + '"' + (d.overridden && r.id === id ? ' selected' : '') + '>' + esc(r.name) + '</option>';
         }).join('');
-        var count = days + '日間 ' + d.total + '件' + (unit === 'driver' ? '（うちドライバー判明 ' + d.assigned + '件）' : '');
+        var count = days + '日間 ' + d.total + '件（うちドライバー判明 ' + d.known + '件）';
         return '<label>' + esc(d.label) +
           '<select class="tk-rule tk-wide" data-key="' + d.key + '">' + opts + '</select>' +
           '<span class="tk-rule-count' + (d.total === 0 ? ' zero' : '') + '">' + esc(count) + '</span></label>';
@@ -635,8 +640,9 @@
       $('tk-csv').addEventListener('click', exportCsv);
 
       $('tk-diag-note').addEventListener('click', function (ev) {
-        if (ev.target.id !== 'tk-to-device') return;
-        $('tk-unit').value = 'device';
+        var unitTo = ev.target.dataset && ev.target.dataset.unit;
+        if (!unitTo) return;
+        $('tk-unit').value = unitTo;
         load();
       });
       $('tk-diag-body').addEventListener('change', function (ev) {

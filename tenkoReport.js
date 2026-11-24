@@ -18,10 +18,11 @@
       minCount: 2             // 増減と判定する最低回数（偶発的な1回を除外）
     },
     // ルールIDは MyGeotab の「ルール」設定に合わせて確認・変更してください
+    // hint：ルールのプルダウンに候補として出す、ルール名のキーワード
     categories: [
-      { key: 'brake', label: '急ブレーキ', ruleIds: ['RuleHarshBrakingId'] },
-      { key: 'accel', label: '急加速',     ruleIds: ['RuleJackrabbitStartsId'] },
-      { key: 'speed', label: '速度超過',   ruleIds: ['RulePostedSpeedingId'] }
+      { key: 'brake', label: '急ブレーキ', ruleIds: ['RuleHarshBrakingId'],     hint: /ブレーキ|制動|減速|brak|decel/i },
+      { key: 'accel', label: '急加速',     ruleIds: ['RuleJackrabbitStartsId'], hint: /加速|発進|accel|jackrabbit/i },
+      { key: 'speed', label: '速度超過',   ruleIds: ['RulePostedSpeedingId'],   hint: /速度|スピード|speed/i }
     ],
     comments: {
       brake: {
@@ -516,11 +517,12 @@
       // ---- 判定に使うルール（急ブレーキ・急加速・速度超過のプルダウン）----
       var rowsHtml = current.diag.map(function (d) {
         var id = d.ruleIds[0];
-        var def = CONFIG.categories.filter(function (c) { return c.key === d.key; })[0].ruleIds;
+        var catCfg = CONFIG.categories.filter(function (c) { return c.key === d.key; })[0];
+        var def = catCfg.ruleIds;
         var defName = def.map(function (x) { return nameOf[x] || x + '（見つかりません）'; }).join('、');
         var list = allRules.filter(function (r) {
           if (r.id === id) return true;   // 選択中のルールは常に残す
-          return ruleFitsGroup(r) && (showAllRules || RULE_HINT.test(r.name || ''));
+          return ruleFitsGroup(r) && (showAllRules || (catCfg.hint || RULE_HINT).test(r.name || ''));
         });
         var opts = '<option value="">標準：' + esc(defName) + '</option>';
         if (d.overridden && !nameOf[id]) opts += '<option value="' + esc(id) + '" selected>' + esc(id) + '（見つかりません）</option>';
@@ -784,7 +786,9 @@
             { id: 'RuleHarshBrakingId', name: '急ブレーキ' }, { id: 'RuleJackrabbitStartsId', name: '急発進' },
             { id: 'RulePostedSpeedingId', name: '速度超過（制限速度）' }, { id: 'RuleIdlingId', name: 'アイドリング' },
             { id: 'demo-custom-speed', name: '速度超過 80km/h（カスタム）' },
-            { id: 'demo-tokyo-brake', name: '急ブレーキ - 東京営業所' }
+            { id: 'demo-tokyo-brake', name: '急ブレーキ - 東京営業所' },
+            { id: 'demo-hb-new', name: 'Harsh Braking (New)' }, { id: 'demo-ha-new', name: 'Harsh Acceleration (New)' },
+            { id: 'demo-sp-new', name: 'Speeding (New)' }
           ];
           return [];
         });

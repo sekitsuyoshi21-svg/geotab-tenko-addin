@@ -90,6 +90,17 @@
     <p>※数値・コメントは確認の補助です。走行条件（道路・天候・積載など）も踏まえて管理者が判断してください。</p>
     <p>※運転傾向の変化を確認するための支援であり、事故の予測や防止を保証するものではありません。</p>
   </footer>
+
+  <div id="tk-modal" class="tk-modal" hidden>
+    <div id="tk-modal-box" class="tk-modal-box" role="dialog" aria-modal="true" aria-labelledby="tk-modal-title">
+      <header class="tk-modal-head">
+        <h2 id="tk-modal-title"></h2>
+        <button type="button" id="tk-modal-close" class="tk-modal-close" aria-label="閉じる">×</button>
+      </header>
+      <div id="tk-modal-body"></div>
+      <div id="tk-tip" class="tk-tip" hidden></div>
+    </div>
+  </div>
 </div>
 <script src="tenkoReport.js"></script>
 </body>

@@ -160,14 +160,20 @@
       if (unit === 'device') return devId;
       return drvId && !UNKNOWN_DRIVER[drvId] ? drvId : null;
     }
+    var nDays = CONFIG.baselineDays + 1;   // 比較の7日間＋前日（グラフ用の日別データ）
+    var zeros = function () { var a = []; for (var i = 0; i < nDays; i++) a.push(0); return a; };
+    function dayIndex(time) {
+      var i = Math.floor((new Date(time).getTime() - t0) / 86400000);
+      return Math.max(0, Math.min(nDays - 1, i));
+    }
     function ent(key) {
       if (!ents[key]) {
         var c = {};
-        CONFIG.categories.forEach(function (cat) { c[cat.key] = { day: 0, base: 0 }; });
+        CONFIG.categories.forEach(function (cat) { c[cat.key] = { day: 0, base: 0, byDay: zeros() }; });
         ents[key] = {
           id: key,
           name: unit === 'driver' ? (userName[key] || key) : (devName[key] || key),
-          dayKm: 0, baseKm: 0, c: c,
+          dayKm: 0, baseKm: 0, c: c, kmByDay: zeros(),
           devs: {}, drvs: {}   // 前日にこの対象と組んだ車両／ドライバー（絞り込み用）
         };
         ents[key][unit === 'driver' ? 'drvs' : 'devs'][key] = 1;
@@ -207,6 +213,7 @@
       if (!key) { if (s === 'day') unknownKm += km; return; }
       var e = ent(key);
       e[s + 'Km'] += km;
+      e.kmByDay[dayIndex(tr.start)] += km;
       if (s === 'day') { e.devs[devId] = 1; if (known) e.drvs[drvId] = 1; }
     });
 
@@ -232,7 +239,9 @@
           var key = keyOf(devId, drvId);
           if (!key) return;
           assigned++;
-          ent(key).c[cat.key][s]++;
+          var cc = ent(key).c[cat.key];
+          cc[s]++;
+          cc.byDay[dayIndex(ev.activeFrom)]++;
         });
       });
       return { key: cat.key, label: cat.label, ruleIds: cat.ruleIds, overridden: cat.overridden, total: total, assigned: assigned, known: known };
@@ -247,7 +256,7 @@
 
     var byName = function (a, b) { return String(a.name).localeCompare(String(b.name), 'ja'); };
     return {
-      rows: rows, unknownKm: unknownKm, diag: diag, rules: raw.rules,
+      rows: rows, unknownKm: unknownKm, diag: diag, rules: raw.rules, baseStart: raw.baseStart, dayStart: raw.dayStart,
       vehicleOpts: raw.devices.map(function (d) { return { id: d.id, name: d.name || d.id }; }).sort(byName),
       driverOpts: Object.keys(driversSeen).map(function (id) { return { id: id, name: userName[id] || id }; }).sort(byName),
       users: raw.users.map(function (u) { return { id: u.id, name: userName[u.id] || u.id, activeTo: u.activeTo, companyGroups: u.companyGroups || [] }; })
@@ -265,7 +274,7 @@
       else if (c.day >= T.minCount && (baseRate === 0 || dayRate >= baseRate * T.upRatio)) trend = 'up';
       // 減少：普段なら前日の距離で1回以上は出ていたはず（期待値>=1）なのに、平均の半分以下だった
       else if (c.base >= T.minCount && baseRate * e.dayKm / 100 >= 1 && dayRate <= baseRate * T.downRatio) trend = 'down';
-      return { key: cat.key, label: cat.label, day: c.day, base: c.base, dayRate: dayRate, baseRate: baseRate, trend: trend };
+      return { key: cat.key, label: cat.label, day: c.day, base: c.base, dayRate: dayRate, baseRate: baseRate, trend: trend, byDay: c.byDay };
     });
 
     var ups = e.cats.filter(function (c) { return c.trend === 'up'; });
@@ -440,7 +449,7 @@
           ? '<ul class="tk-changes">' + r.changes.map(function (c) { return '<li class="' + c.trend + '">' + esc(c.text) + '</li>'; }).join('') + '</ul>'
           : '<span class="tk-none">—</span>';
         return '<tr class="st-' + r.status + (n.checked ? ' is-checked' : '') + '" data-idx="' + idx + '">' +
-          '<td><div class="tk-name">' + esc(r.name) + '</div>' +
+          '<td><button type="button" class="tk-name tk-name-link" title="過去' + (CONFIG.baselineDays + 1) + '日間のグラフを表示">' + esc(r.name) + '</button>' +
           '<div class="tk-sub">前日 ' + Math.round(r.dayKm) + ' km</div>' +
           '<div class="tk-sub">' + CONFIG.baselineDays + '日計 ' + Math.round(r.baseKm) + ' km</div></td>' +
           r.cats.map(cellHtml).join('') +
@@ -455,6 +464,96 @@
 
       $('tk-body').innerHTML = html || '<tr><td colspan="8" class="tk-none">表示する対象がありません。</td></tr>';
       Array.prototype.forEach.call(document.querySelectorAll('#tenko .tk-comment'), autoGrow);
+    }
+
+    // ===== 過去8日間のグラフ（ポップアップ）=================================
+    var WEEK = ['日', '月', '火', '水', '木', '金', '土'];
+    var CHART = { past: '#86b6ef', target: '#2a78d6', grid: '#e6e9ef', axis: '#c5cfdc', ink: '#1c2533', muted: '#5f6b7a' };
+
+    // 目盛りが整数のきりのいい値になるよう最大値と間隔を決める
+    function niceScale(maxV, integer) {
+      if (maxV <= 0) return { max: integer ? 1 : 10, step: integer ? 1 : 5 };
+      if (integer && maxV <= 4) return { max: maxV, step: 1 };
+      var raw = maxV / 4, mag = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10));
+      var step = [1, 2, 5, 10].map(function (m) { return m * mag; }).filter(function (s) { return s >= raw; })[0];
+      if (integer) step = Math.max(1, Math.round(step));
+      return { max: Math.ceil(maxV / step) * step, step: step };
+    }
+
+    function barPath(x, y, w, h) {   // 上端だけ角丸（4px）、下端は基準線に接地
+      var r = Math.min(4, h, w / 2);
+      return 'M' + x + ',' + (y + h) + 'V' + (y + r) + 'Q' + x + ',' + y + ' ' + (x + r) + ',' + y +
+        'H' + (x + w - r) + 'Q' + (x + w) + ',' + y + ' ' + (x + w) + ',' + (y + r) + 'V' + (y + h) + 'Z';
+    }
+
+    // 1指標×8日の棒グラフ。前日だけ濃い青、比較の7日間は薄い青
+    function weekChart(values, days, unit, integer) {
+      var W = 320, H = 168, ml = 34, mr = 8, mt = 18, mb = 30;
+      var pw = W - ml - mr, ph = H - mt - mb, n = values.length, band = pw / n, bw = Math.max(6, band - 8);
+      var sc = niceScale(Math.max.apply(null, values), integer);
+      var Y = function (v) { return mt + ph - v / sc.max * ph; };
+      var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="tk-chart" role="img">';
+      for (var t = 0; t <= sc.max + 1e-9; t += sc.step) {
+        s += '<line x1="' + ml + '" x2="' + (W - mr) + '" y1="' + Y(t) + '" y2="' + Y(t) + '" stroke="' + (t === 0 ? CHART.axis : CHART.grid) + '" stroke-width="1"/>' +
+          '<text x="' + (ml - 6) + '" y="' + (Y(t) + 3.5) + '" text-anchor="end" font-size="10" fill="' + CHART.muted + '">' + (Math.round(t * 10) / 10) + '</text>';
+      }
+      values.forEach(function (v, i) {
+        var x = ml + i * band + (band - bw) / 2, last = i === n - 1;
+        var h = Y(0) - Y(v);
+        if (v > 0) s += '<path d="' + barPath(x, Y(v), bw, Math.max(h, 1)) + '" fill="' + (last ? CHART.target : CHART.past) + '"/>';
+        if (last) {   // 値ラベルは前日だけ（全部に付けると読みにくい）
+          s += '<text x="' + (x + bw / 2) + '" y="' + (Y(v) - 5) + '" text-anchor="middle" font-size="11" font-weight="700" fill="' + CHART.ink + '">' +
+            (integer ? v : Math.round(v)) + '</text>';
+        }
+        s += '<text x="' + (ml + i * band + band / 2) + '" y="' + (H - mb + 14) + '" text-anchor="middle" font-size="10" ' +
+          (last ? 'font-weight="700" fill="' + CHART.ink + '"' : 'fill="' + CHART.muted + '"') + '>' + (last ? '前日' : days[i].short) + '</text>' +
+          '<text x="' + (ml + i * band + band / 2) + '" y="' + (H - mb + 26) + '" text-anchor="middle" font-size="9" fill="' + CHART.muted + '">' + days[i].wd + '</text>';
+        // マウスを乗せた時の当たり判定（棒より広く、プロットの高さいっぱい）
+        s += '<rect class="tk-hit" x="' + (ml + i * band) + '" y="' + mt + '" width="' + band + '" height="' + ph + '" fill="transparent" ' +
+          'data-tip="' + esc(days[i].label + '：' + (integer ? v : Math.round(v)) + unit) + '"/>';
+      });
+      return s + '</svg>';
+    }
+
+    function openChart(row) {
+      var n = CONFIG.baselineDays + 1;
+      var days = [];
+      for (var i = 0; i < n; i++) {
+        var d = addDays(current.baseStart, i);
+        days.push({ short: md(d), wd: WEEK[d.getDay()], label: md(d) + '（' + WEEK[d.getDay()] + '）' + (i === n - 1 ? '・前日' : '') });
+      }
+      var panel = function (title, sub, svg) {
+        return '<section class="tk-mpanel"><h3>' + esc(title) + '</h3><p class="tk-msub">' + sub + '</p>' + svg + '</section>';
+      };
+      var html = '<div class="tk-mgrid">' +
+        panel('走行距離', '前日 ' + Math.round(row.dayKm) + ' km ／ 7日計 ' + Math.round(row.baseKm) + ' km',
+          weekChart(row.kmByDay, days, ' km', false));
+      row.cats.forEach(function (c) {
+        var arrow = c.trend === 'up' ? ' <span class="tk-up">▲ 増加</span>' : c.trend === 'down' ? ' <span class="tk-down">▼ 減少</span>' : '';
+        html += panel(c.label + '（回数）', '前日 ' + c.day + '回（' + fmt1(c.dayRate) + '/100km）・平均 ' + fmt1(c.baseRate) + '/100km' + arrow,
+          weekChart(c.byDay, days, '回', true));
+      });
+      html += '</div>';
+
+      // 表で見る（色だけに頼らない・数値を確認できるように）
+      html += '<table class="tk-mtable"><thead><tr><th>日付</th><th>走行距離</th>' +
+        row.cats.map(function (c) { return '<th>' + esc(c.label) + '</th>'; }).join('') + '</tr></thead><tbody>';
+      days.forEach(function (d, i) {
+        html += '<tr' + (i === n - 1 ? ' class="is-target"' : '') + '><td>' + esc(d.label) + '</td><td>' + Math.round(row.kmByDay[i]) + ' km</td>' +
+          row.cats.map(function (c) { return '<td>' + c.byDay[i] + '回</td>'; }).join('') + '</tr>';
+      });
+      html += '</tbody></table>' +
+        '<p class="tk-msub">棒グラフは日ごとの回数です。判定（注意・改善）は走行100kmあたりの回数で比べています。</p>';
+
+      $('tk-modal-title').textContent = row.name + '　過去' + n + '日間の推移';
+      $('tk-modal-body').innerHTML = html;
+      $('tk-modal').hidden = false;
+      $('tk-modal-close').focus();
+    }
+
+    function closeChart() {
+      $('tk-modal').hidden = true;
+      $('tk-tip').hidden = true;
     }
 
     var RULE_HINT = /ブレーキ|制動|加速|発進|速度|スピード|brak|accel|jackrabbit|speed/i;
@@ -655,6 +754,26 @@
         store.set(key, ov);
         load();
       });
+
+      // 名前クリックでグラフのポップアップ
+      $('tk-body').addEventListener('click', function (ev) {
+        if (!ev.target.closest('.tk-name-link')) return;
+        var x = rowFromEvent(ev); if (!x) return;
+        openChart(x.row);
+      });
+      $('tk-modal-close').addEventListener('click', closeChart);
+      $('tk-modal').addEventListener('click', function (ev) { if (ev.target.id === 'tk-modal') closeChart(); });
+      document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && !$('tk-modal').hidden) closeChart(); });
+      $('tk-modal-body').addEventListener('mousemove', function (ev) {
+        var tip = $('tk-tip');
+        if (!ev.target.classList || !ev.target.classList.contains('tk-hit')) { tip.hidden = true; return; }
+        var box = $('tk-modal-box').getBoundingClientRect();
+        tip.textContent = ev.target.getAttribute('data-tip');
+        tip.hidden = false;
+        tip.style.left = (ev.clientX - box.left + 12) + 'px';
+        tip.style.top = (ev.clientY - box.top + $('tk-modal-box').scrollTop - 30) + 'px';
+      });
+      $('tk-modal-body').addEventListener('mouseleave', function () { $('tk-tip').hidden = true; });
 
       var body = $('tk-body');
       body.addEventListener('input', function (ev) {

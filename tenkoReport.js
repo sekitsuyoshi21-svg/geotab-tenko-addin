@@ -220,7 +220,8 @@
     return {
       rows: rows, unknownKm: unknownKm, diag: diag, rules: raw.rules,
       vehicleOpts: raw.devices.map(function (d) { return { id: d.id, name: d.name || d.id }; }).sort(byName),
-      driverOpts: Object.keys(driversSeen).map(function (id) { return { id: id, name: userName[id] || id }; }).sort(byName)
+      driverOpts: Object.keys(driversSeen).map(function (id) { return { id: id, name: userName[id] || id }; }).sort(byName),
+      users: raw.users.map(function (u) { return { id: u.id, name: userName[u.id] || u.id, activeTo: u.activeTo, companyGroups: u.companyGroups || [] }; })
     };
   }
 
@@ -316,11 +317,31 @@
 
     function populateFilters() {
       fillSelect($('tk-fdev'), 'すべての車両', current.vehicleOpts);
-      fillSelect($('tk-fdrv'), 'すべてのドライバー', current.driverOpts);
+      fillSelect($('tk-fdrv'), 'すべてのドライバー', driverOptionsForGroup());
+    }
+
+    // 選んだグループ（配下の階層を含む）に所属するドライバーだけを候補にする。
+    // グループ未選択、または所属するドライバーが1人もいない時は、期間内に運行したドライバーを候補にする
+    function driverOptionsForGroup() {
+      var gid = $('tk-group').value;
+      if (!gid || !groupById[gid]) return current.driverOpts;
+      var sub = {};
+      (function walk(id) {
+        if (sub[id] || !groupById[id]) return;
+        sub[id] = 1;
+        (groupById[id].children || []).forEach(function (c) { walk(c.id); });
+      })(gid);
+      var now = Date.now();
+      var inGroup = current.users.filter(function (u) {
+        if (u.activeTo && new Date(u.activeTo).getTime() < now) return false;   // 無効化済みのユーザーは除く
+        return u.companyGroups.some(function (g) { return sub[idOf(g)]; });
+      }).sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'ja'); });
+      return inGroup.length ? inGroup : current.driverOpts;
     }
 
     var GROUP_STORE_KEY = 'tenkoReport:group';
     var groupsLoaded = false;
+    var groupById = {};
 
     // MyGeotab が最初から持つシステムのグループ（Asset Type、燃料種別など）は
     // ID が「Group…Id」の形。御社で作ったグループはランダムなID（例: b27A5）なので、これで見分ける
@@ -352,6 +373,7 @@
       if (groupsLoaded) return Promise.resolve();
       return multiCall(api, [['Get', { typeName: 'Group' }]]).then(function (res) {
         groupsLoaded = true;
+        (res[0] || []).forEach(function (g) { groupById[g.id] = g; });
         fillSelect($('tk-group'), 'すべて', groupOptions(res[0] || []));
         var saved = store.get(GROUP_STORE_KEY);
         if (saved && Array.prototype.some.call($('tk-group').options, function (o) { return o.value === saved; })) {
@@ -704,7 +726,10 @@
           if (p.typeName === 'Trip') return pick(data.trips);
           if (p.typeName === 'Device') return people.map(function (x, i) { return { id: 'demo-d' + i, name: x.plate }; })
             .filter(function (d) { return inGroup(d.id, gs); });
-          if (p.typeName === 'User') return people.map(function (x, i) { return { id: 'demo-u' + i, lastName: x.last, firstName: x.first, name: 'demo' + i }; });
+          if (p.typeName === 'User') return people.map(function (x, i) {
+            return { id: 'demo-u' + i, lastName: x.last, firstName: x.first, name: 'demo' + i,
+              companyGroups: [{ id: i < 4 ? 'demo-g-tokyo' : 'demo-g-nagoya' }] };
+          }).concat([{ id: 'demo-u-extra', lastName: '小林', firstName: '亮', name: 'demo-extra', companyGroups: [{ id: 'demo-g-tokyo' }] }]);
           if (p.typeName === 'ExceptionEvent') return pick(data.ex[p.search.ruleSearch.id] || []);
           if (p.typeName === 'Rule') return [
             { id: 'RuleHarshBrakingId', name: '急ブレーキ' }, { id: 'RuleJackrabbitStartsId', name: '急発進' },

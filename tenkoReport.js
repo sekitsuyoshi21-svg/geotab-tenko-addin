@@ -22,8 +22,16 @@
     categories: [
       { key: 'brake', label: '急ブレーキ', ruleIds: ['RuleHarshBrakingId'],     hint: /ブレーキ|制動|減速|brak|decel/i },
       { key: 'accel', label: '急加速',     ruleIds: ['RuleJackrabbitStartsId'], hint: /加速|発進|accel|jackrabbit/i },
-      { key: 'speed', label: '速度超過',   ruleIds: ['RulePostedSpeedingId'],   hint: /速度|スピード|speed/i }
+      { key: 'speed', label: '速度超過',   ruleIds: ['RulePostedSpeedingId'],   hint: /速度|スピード|speed/i },
+      // モービルアイ（group: 'me'）。ruleIds を空にしておくと、名前が「ME…」で hint に合うルールを自動で全部使う
+      // （例：ME車線逸脱警報-右 と ME車線逸脱警報-左 を合算）
+      { key: 'fcw', label: 'ME追突警報',   short: '追突',     group: 'me', ruleIds: [], hint: /追突|前方衝突|forward\s*collision|fcw/i },
+      { key: 'hmw', label: 'ME車間警報',   short: '車間',     group: 'me', ruleIds: [], hint: /車間|headway|hmw/i },
+      { key: 'ldw', label: 'ME車線逸脱',   short: '車線逸脱', group: 'me', ruleIds: [], hint: /車線|lane|ldw/i },
+      { key: 'pcw', label: 'ME歩行者警報', short: '歩行者',   group: 'me', ruleIds: [], hint: /歩行者|pedestrian|pcw/i }
     ],
+    // モービルアイのルールの見分け方（ルール名が「ME」で始まる、または Mobileye を含む）
+    meRule: /^\s*ME(?![a-z])|[Mm]obileye|モービルアイ/,
     comments: {
       brake: {
         up:   '急ブレーキが普段より増えています。車間距離と早めの減速を意識しましょう。',
@@ -36,9 +44,25 @@
       speed: {
         up:   '速度超過が普段より増えています。時間に余裕を持ち、制限速度を守りましょう。',
         down: '速度管理が改善しています。今週も継続しましょう。'
+      },
+      fcw: {
+        up:   '追突警報が普段より増えています。前の車との距離を保ち、早めのブレーキを心がけましょう。',
+        down: '追突警報が普段より減っています。この調子で続けましょう。'
+      },
+      hmw: {
+        up:   '車間警報が普段より増えています。前の車との車間を十分にとりましょう。',
+        down: '車間の取り方が改善しています。今週も継続しましょう。'
+      },
+      ldw: {
+        up:   '車線逸脱警報が普段より増えています。疲れや脇見がないか確認し、車線の中央を保ちましょう。',
+        down: '車線逸脱警報が普段より減っています。この調子で続けましょう。'
+      },
+      pcw: {
+        up:   '歩行者警報が普段より増えています。交差点や生活道路では歩行者・自転車に特に注意しましょう。',
+        down: '歩行者警報が普段より減っています。引き続き周囲に注意しましょう。'
       }
     },
-    goodComment:    '前日は急ブレーキ・急加速・速度超過がありませんでした。引き続き安全運転を。',
+    goodComment:    '前日は注意が必要な運転の記録がありませんでした。引き続き安全運転を。',
     steadyComment:  '普段と大きな変化はありません。引き続き安全運転を。',
     noBaseComment:  '比較できる過去データがありません。今日から傾向を確認していきます。',
     lowDataComment: '（前日の走行距離が短いため、比較は参考程度です）'
@@ -81,7 +105,7 @@
   }
 
   // 画面のグループ選択を優先。未選択なら MyGeotab 上部のグループフィルターに従う
-  function loadRaw(api, state, target, groupId) {
+  function loadRaw(api, state, target, groupId, catsIn) {
     var dayStart = target;
     var dayEnd = addDays(target, 1);
     var baseStart = addDays(target, -CONFIG.baselineDays);
@@ -93,7 +117,7 @@
     var deviceSearch = groupFiltered ? { groups: groups } : undefined;
     var range = { fromDate: baseStart.toISOString(), toDate: dayEnd.toISOString() };
 
-    var cats = activeCategories(groupId);
+    var cats = catsIn || activeCategories(groupId);
     var ruleIds = [];
     cats.forEach(function (c) {
       c.ruleIds.forEach(function (id) { if (ruleIds.indexOf(id) < 0) ruleIds.push(id); });
@@ -129,7 +153,7 @@
   function activeCategories(groupId) {
     var ov = store.get(ruleStoreKey(groupId)) || {};
     return CONFIG.categories.map(function (c) {
-      return { key: c.key, label: c.label, ruleIds: ov[c.key] ? [ov[c.key]] : c.ruleIds, overridden: !!ov[c.key] };
+      return { key: c.key, label: c.label, group: c.group, ruleIds: ov[c.key] ? [ov[c.key]] : c.ruleIds.slice(), overridden: !!ov[c.key] };
     });
   }
 
@@ -244,7 +268,8 @@
           cc.byDay[dayIndex(ev.activeFrom)]++;
         });
       });
-      return { key: cat.key, label: cat.label, ruleIds: cat.ruleIds, overridden: cat.overridden, total: total, assigned: assigned, known: known };
+      return { key: cat.key, label: cat.label, group: cat.group, auto: cat.auto, ruleIds: cat.ruleIds, overridden: cat.overridden,
+        total: total, assigned: assigned, known: known };
     });
 
     var rows = Object.keys(ents).map(function (k) { return ents[k]; })
@@ -274,7 +299,8 @@
       else if (c.day >= T.minCount && (baseRate === 0 || dayRate >= baseRate * T.upRatio)) trend = 'up';
       // 減少：普段なら前日の距離で1回以上は出ていたはず（期待値>=1）なのに、平均の半分以下だった
       else if (c.base >= T.minCount && baseRate * e.dayKm / 100 >= 1 && dayRate <= baseRate * T.downRatio) trend = 'down';
-      return { key: cat.key, label: cat.label, day: c.day, base: c.base, dayRate: dayRate, baseRate: baseRate, trend: trend, byDay: c.byDay };
+      return { key: cat.key, label: cat.label, short: cat.short || cat.label, group: cat.group,
+        day: c.day, base: c.base, dayRate: dayRate, baseRate: baseRate, trend: trend, byDay: c.byDay };
     });
 
     var ups = e.cats.filter(function (c) { return c.trend === 'up'; });
@@ -327,6 +353,26 @@
       el.hidden = !text;
       el.textContent = text || '';
       el.className = 'tk-msg' + (isErr ? ' err' : '');
+    }
+
+    // ルールが割り当たっていない項目（モービルアイ未導入など）
+    function unsetKeys() {
+      var u = {};
+      (current && current.diag || []).forEach(function (d) { if (!d.ruleIds.length) u[d.key] = 1; });
+      return u;
+    }
+
+    // モービルアイの4項目は1つの列にまとめて表示（列が増えすぎないように）
+    function meCellHtml(r) {
+      var unset = unsetKeys();
+      var me = r.cats.filter(function (c) { return c.group === 'me'; });
+      if (!me.length) return '<td></td>';
+      return '<td class="tk-me">' + me.map(function (c) {
+        if (unset[c.key]) return '<div class="tk-me-line na">' + esc(c.short) + '<span>—</span></div>';
+        var arrow = c.trend === 'up' ? ' ▲' : c.trend === 'down' ? ' ▼' : '';
+        return '<div class="tk-me-line ' + c.trend + '" title="' + esc(c.label + '：' + fmt1(c.dayRate) + '/100km（平均 ' + fmt1(c.baseRate) + '）') + '">' +
+          esc(c.short) + '<span><b>' + c.day + '</b>回' + arrow + '</span></div>';
+      }).join('') + '</td>';
     }
 
     function cellHtml(c) {
@@ -407,10 +453,29 @@
       return out;
     }
 
+    var rulesCache = null;
+
+    // 集計に使う項目とルール。ルールが未指定（モービルアイなど）の項目は、
+    // 名前が「ME…」で項目のキーワードに合うルールを自動で全部使う（例：車線逸脱の右・左を合算）
+    function categoriesFor(groupId) {
+      return activeCategories(groupId).map(function (c) {
+        var cfg = CONFIG.categories.filter(function (x) { return x.key === c.key; })[0];
+        if (!c.overridden && !c.ruleIds.length && rulesCache && cfg.hint) {
+          c.ruleIds = rulesCache.filter(function (r) {
+            var n = r.name || '';
+            return CONFIG.meRule.test(n) && cfg.hint.test(n) && ruleFitsGroup(r);
+          }).map(function (r) { return r.id; });
+          c.auto = true;
+        }
+        return c;
+      });
+    }
+
     function loadGroups() {
       if (groupsLoaded) return Promise.resolve();
-      return multiCall(api, [['Get', { typeName: 'Group' }]]).then(function (res) {
+      return multiCall(api, [['Get', { typeName: 'Group' }], ['Get', { typeName: 'Rule' }]]).then(function (res) {
         groupsLoaded = true;
+        rulesCache = res[1] || [];
         (res[0] || []).forEach(function (g) { groupById[g.id] = g; });
         fillSelect($('tk-group'), 'すべて', groupOptions(res[0] || []));
         var saved = store.get(GROUP_STORE_KEY);
@@ -452,7 +517,7 @@
           '<td><button type="button" class="tk-name tk-name-link" title="過去' + (CONFIG.baselineDays + 1) + '日間のグラフを表示">' + esc(r.name) + '</button>' +
           '<div class="tk-sub">前日 ' + Math.round(r.dayKm) + ' km</div>' +
           '<div class="tk-sub">' + CONFIG.baselineDays + '日計 ' + Math.round(r.baseKm) + ' km</div></td>' +
-          r.cats.map(cellHtml).join('') +
+          r.cats.filter(function (c) { return c.group !== 'me'; }).map(cellHtml).join('') + meCellHtml(r) +
           '<td><span class="tk-badge ' + r.status + '">' + STATUS[r.status].label + '</span></td>' +
           '<td>' + changes + '</td>' +
           '<td><textarea class="tk-comment' + (n.edited ? ' edited' : '') + '" aria-label="' + esc(r.name) + 'の点呼コメント">' + esc(n.comment) + '</textarea>' +
@@ -462,7 +527,7 @@
           '</tr>';
       }).join('');
 
-      $('tk-body').innerHTML = html || '<tr><td colspan="8" class="tk-none">表示する対象がありません。</td></tr>';
+      $('tk-body').innerHTML = html || '<tr><td colspan="9" class="tk-none">表示する対象がありません。</td></tr>';
       Array.prototype.forEach.call(document.querySelectorAll('#tenko .tk-comment'), autoGrow);
     }
 
@@ -528,7 +593,9 @@
       var html = '<div class="tk-mgrid">' +
         panel('走行距離', '前日 ' + Math.round(row.dayKm) + ' km ／ 7日計 ' + Math.round(row.baseKm) + ' km',
           weekChart(row.kmByDay, days, ' km', false));
-      row.cats.forEach(function (c) {
+      var unset = unsetKeys();
+      var cats = row.cats.filter(function (c) { return !unset[c.key]; });   // ルール未設定の項目は出さない
+      cats.forEach(function (c) {
         var arrow = c.trend === 'up' ? ' <span class="tk-up">▲ 増加</span>' : c.trend === 'down' ? ' <span class="tk-down">▼ 減少</span>' : '';
         html += panel(c.label + '（回数）', '前日 ' + c.day + '回（' + fmt1(c.dayRate) + '/100km）・平均 ' + fmt1(c.baseRate) + '/100km' + arrow,
           weekChart(c.byDay, days, '回', true));
@@ -537,10 +604,10 @@
 
       // 表で見る（色だけに頼らない・数値を確認できるように）
       html += '<table class="tk-mtable"><thead><tr><th>日付</th><th>走行距離</th>' +
-        row.cats.map(function (c) { return '<th>' + esc(c.label) + '</th>'; }).join('') + '</tr></thead><tbody>';
+        cats.map(function (c) { return '<th>' + esc(c.label) + '</th>'; }).join('') + '</tr></thead><tbody>';
       days.forEach(function (d, i) {
         html += '<tr' + (i === n - 1 ? ' class="is-target"' : '') + '><td>' + esc(d.label) + '</td><td>' + Math.round(row.kmByDay[i]) + ' km</td>' +
-          row.cats.map(function (c) { return '<td>' + c.byDay[i] + '回</td>'; }).join('') + '</tr>';
+          cats.map(function (c) { return '<td>' + c.byDay[i] + '回</td>'; }).join('') + '</tr>';
       });
       html += '</tbody></table>' +
         '<p class="tk-msub">棒グラフは日ごとの回数です。判定（注意・改善）は走行100kmあたりの回数で比べています。</p>';
@@ -618,30 +685,38 @@
       var noteHtml = notes.length ? '<div class="tk-rulebar-note">' + notes.join('') + '</div>' : '';
 
       // ---- 判定に使うルール（急ブレーキ・急加速・速度超過のプルダウン）----
-      var rowsHtml = current.diag.map(function (d) {
+      var ruleLabel = function (d) {
         var id = d.ruleIds[0];
         var catCfg = CONFIG.categories.filter(function (c) { return c.key === d.key; })[0];
         var def = catCfg.ruleIds;
-        var defName = def.map(function (x) { return nameOf[x] || x + '（見つかりません）'; }).join('、');
+        var autoIds = d.auto ? d.ruleIds : [];
         var list = allRules.filter(function (r) {
-          if (r.id === id) return true;   // 選択中のルールは常に残す
+          if (d.overridden && r.id === id) return true;   // 選択中のルールは常に残す
           return ruleFitsGroup(r) && (showAllRules || (catCfg.hint || RULE_HINT).test(r.name || ''));
         });
-        var opts = '<option value="">標準：' + esc(defName) + '</option>';
+        // 先頭の選択肢：標準ルール（急ブレーキ等）／自動で選んだルール（モービルアイ）
+        var first = def.length
+          ? '標準：' + def.map(function (x) { return nameOf[x] || x + '（見つかりません）'; }).join('、')
+          : (autoIds.length ? '自動：' + autoIds.map(function (x) { return nameOf[x] || x; }).join('＋') : '（該当するルールなし）');
+        var opts = '<option value="">' + esc(first) + '</option>';
         if (d.overridden && !nameOf[id]) opts += '<option value="' + esc(id) + '" selected>' + esc(id) + '（見つかりません）</option>';
         opts += list.filter(function (r) { return def.indexOf(r.id) < 0; }).map(function (r) {
           return '<option value="' + esc(r.id) + '"' + (d.overridden && r.id === id ? ' selected' : '') + '>' + esc(r.name) + '</option>';
         }).join('');
-        var count = days + '日間 ' + d.total + '件（うちドライバー判明 ' + d.known + '件）';
+        var count = d.ruleIds.length ? days + '日間 ' + d.total + '件（うちドライバー判明 ' + d.known + '件）' : 'ルール未設定';
         return '<label>' + esc(d.label) +
-          '<select class="tk-rule tk-wide" data-key="' + d.key + '">' + opts + '</select>' +
+          '<select class="tk-rule tk-wide" data-key="' + d.key + '"' + (autoIds.length > 1 ? ' title="' + esc(first) + '"' : '') + '>' + opts + '</select>' +
           '<span class="tk-rule-count' + (d.total === 0 ? ' zero' : '') + '">' + esc(count) + '</span></label>';
-      }).join('');
+      };
+      var mainHtml = current.diag.filter(function (d) { return d.group !== 'me'; }).map(ruleLabel).join('');
+      var meDiag = current.diag.filter(function (d) { return d.group === 'me'; });
 
       box.hidden = false;
-      $('tk-diag-body').innerHTML = rowsHtml +
+      $('tk-diag-body').innerHTML =
+        '<div class="tk-rulebar-row">' + mainHtml +
         '<label class="tk-allrules"><span><input type="checkbox" id="tk-allrules"' + (showAllRules ? ' checked' : '') + '> すべてのルールを候補に表示</span></label>' +
-        noteHtml;
+        noteHtml + '</div>' +
+        (meDiag.length ? '<div class="tk-rulebar-row tk-rulebar-me"><div class="tk-rulebar-sub">モービルアイ</div>' + meDiag.map(ruleLabel).join('') + '</div>' : '');
     }
     var showAllRules = false;
 
@@ -665,7 +740,7 @@
       $('tk-reload').disabled = true;
       showMsg('データを取得しています…');
       var target = parseYmd($('tk-date').value);
-      loadRaw(api, state, target, $('tk-group').value).then(function (raw) {
+      loadRaw(api, state, target, $('tk-group').value, categoriesFor($('tk-group').value)).then(function (raw) {
         current = aggregate(raw, $('tk-unit').value);
         $('tk-period').textContent = periodText(raw, current.unknownKm);
         showMsg(current.rows.length ? '' : '前日に運行した対象がありません。日付・グループ・集計単位を確認してください。');
@@ -835,18 +910,20 @@
       { last: '山田', first: '太郎', plate: '品川 100 あ 12-01', base: { brake: 0.4, accel: 0.3, speed: 0.5 }, day: { brake: 3.0 } },
       { last: '佐藤', first: '次郎', plate: '品川 100 あ 12-02', base: { brake: 0.5, accel: 0.4, speed: 2.2 }, day: { speed: 0 } },
       { last: '鈴木', first: '花子', plate: '品川 100 あ 12-03', base: { brake: 0.1, accel: 0.1, speed: 0.1 }, day: { brake: 0, accel: 0, speed: 0 } },
-      { last: '高橋', first: '健',   plate: '品川 100 あ 12-04', base: { brake: 0.6, accel: 0.5, speed: 0.6 }, day: { accel: 2.6, speed: 2.0 } },
+      { last: '高橋', first: '健',   plate: '品川 100 あ 12-04', base: { brake: 0.6, accel: 0.5, speed: 0.6 }, day: { accel: 2.6, speed: 2.0, hmw: 2.5 } },
       { last: '田中', first: '誠',   plate: '品川 100 あ 12-05', base: { brake: 0.7, accel: 0.6, speed: 0.8 }, day: { brake: 0.8, accel: 0.6, speed: 0.8 } },
       { last: '伊藤', first: '美咲', plate: '品川 100 あ 12-06', base: { brake: 0.5, accel: 0.5, speed: 0.5 }, day: {}, dayKm: 12 },
       { last: '渡辺', first: '翔',   plate: '品川 100 あ 12-07', base: { brake: 0.9, accel: 0.4, speed: 0.6 }, day: { brake: 1.0, accel: 0.5, speed: 0.6 } },
       { last: '中村', first: '大輔', plate: '品川 100 あ 12-08', base: { brake: 1.8, accel: 0.6, speed: 0.4 }, day: { brake: 0, accel: 0.6 } }
     ];
-    var ruleOf = { brake: 'RuleHarshBrakingId', accel: 'RuleJackrabbitStartsId', speed: 'RulePostedSpeedingId' };
+    var ruleOf = { brake: 'RuleHarshBrakingId', accel: 'RuleJackrabbitStartsId', speed: 'RulePostedSpeedingId',
+      fcw: 'demo-me-fcw', hmw: 'demo-me-hmw', ldw: 'demo-me-ldw-r', pcw: 'demo-me-pcw' };
+    var ME_BASE = { fcw: 0.1, hmw: 0.4, ldw: 0.3, pcw: 0.05 };   // モービルアイの平常時の発生率（デモ）
 
     function build(from, to) {
       var target = addDays(new Date(to.getTime() - 1), 0);
       target.setHours(0, 0, 0, 0);
-      var out = { trips: [], ex: { RuleHarshBrakingId: [], RuleJackrabbitStartsId: [], RulePostedSpeedingId: [] } };
+      var out = { trips: [], ex: {} };
       for (var d = new Date(from); d < to; d = addDays(d, 1)) {
         var isTarget = d.getTime() === target.getTime();
         people.forEach(function (p, i) {
@@ -859,11 +936,14 @@
           out.trips.push({ device: dev, driver: drv, start: t1.toISOString(), distance: km * 0.55 });
           out.trips.push({ device: dev, driver: drv, start: t2.toISOString(), distance: km * 0.45 });
           Object.keys(ruleOf).forEach(function (k) {
-            var rate = isTarget && p.day[k] != null ? p.day[k] : p.base[k];
+            var base = p.base[k] != null ? p.base[k] : ME_BASE[k];
+            var rate = isTarget && p.day[k] != null ? p.day[k] : base;
             var n = isTarget && p.day[k] != null ? Math.round(rate * km / 100) : poisson(rng, rate * km / 100);
             for (var j = 0; j < n; j++) {
               var at = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 8 + Math.floor(rng() * 9), Math.floor(rng() * 60));
-              out.ex[ruleOf[k]].push({ rule: { id: ruleOf[k] }, device: dev, driver: drv, activeFrom: at.toISOString() });
+              // 車線逸脱は右・左の2ルールに分けて記録（実データと同じ形）
+              var rid = k === 'ldw' && j % 2 ? 'demo-me-ldw-l' : ruleOf[k];
+              (out.ex[rid] = out.ex[rid] || []).push({ rule: { id: rid }, device: dev, driver: drv, activeFrom: at.toISOString() });
             }
           });
         });
@@ -913,7 +993,11 @@
             { id: 'demo-custom-speed', name: '速度超過 80km/h（カスタム）' },
             { id: 'demo-tokyo-brake', name: '急ブレーキ - 東京営業所' },
             { id: 'demo-hb-new', name: 'Harsh Braking (New)' }, { id: 'demo-ha-new', name: 'Harsh Acceleration (New)' },
-            { id: 'demo-sp-new', name: 'Speeding (New)' }
+            { id: 'demo-sp-new', name: 'Speeding (New)' },
+            { id: 'demo-me-fcw', name: 'ME追突警報' }, { id: 'demo-me-ufcw', name: 'ME低速時追突警報' },
+            { id: 'demo-me-hmw', name: 'ME車間警報' }, { id: 'demo-me-pcw', name: 'ME歩行者警報' },
+            { id: 'demo-me-ldw-r', name: 'ME車線逸脱警報-右' }, { id: 'demo-me-ldw-l', name: 'ME車線逸脱警報-左' },
+            { id: 'demo-me-tamper', name: 'MEタンパーアラート' }
           ];
           return [];
         });

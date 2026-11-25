@@ -53,7 +53,11 @@
 #tenko .tk-diag summary { cursor: pointer; font-weight: 700; color: var(--tk-navy); }
 #tenko .tk-rulebar { background: #fff; border: 1px solid var(--tk-line); border-radius: 8px; padding: 10px 12px; margin: 8px 0 6px; }
 #tenko .tk-rulebar-title { font-size: 12px; font-weight: 700; color: var(--tk-navy); margin-bottom: 6px; }
-#tenko .tk-rulebar-body { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 20px; }
+#tenko .tk-rulebar-body { display: flex; flex-direction: column; gap: 10px; }
+#tenko .tk-rulebar-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 20px; }
+#tenko .tk-rulebar-me { border-top: 1px dashed var(--tk-line); padding-top: 10px; }
+#tenko .tk-rulebar-sub { width: 100%; font-size: 12px; font-weight: 700; color: var(--tk-navy); margin-bottom: -6px; }
+#tenko .tk-rulebar-me select { min-width: 170px; max-width: 230px; }
 #tenko .tk-rulebar-body label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--tk-gray); }
 #tenko .tk-rulebar-body select { font: inherit; font-size: 14px; padding: 5px 8px; border: 1px solid #c5cfdc; border-radius: 6px; background: #fff; color: #1c2533; min-width: 200px; max-width: 280px; }
 #tenko .tk-rule-count { font-size: 11px; }
@@ -72,7 +76,7 @@
 #tenko .tk-diag-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
 #tenko .tk-diag-table select { font: inherit; padding: 4px 6px; border: 1px solid #c5cfdc; border-radius: 6px; max-width: 320px; }
 #tenko .tk-tablewrap { overflow-x: auto; background: #fff; border: 1px solid var(--tk-line); border-radius: 8px; }
-#tenko .tk-table { width: 100%; border-collapse: collapse; min-width: 1050px; }
+#tenko .tk-table { width: 100%; border-collapse: collapse; min-width: 1200px; }
 #tenko .tk-table th { background: #eaf0f8; color: var(--tk-navy); font-size: 12px; text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--tk-line); white-space: nowrap; }
 #tenko .tk-table td { padding: 10px; border-bottom: 1px solid var(--tk-line); vertical-align: top; }
 #tenko .tk-table tr.st-warn td:first-child { box-shadow: inset 4px 0 0 var(--tk-red); }
@@ -81,7 +85,9 @@
 #tenko .tk-table tr.is-checked td { color: #6b7685; }
 
 #tenko .tk-name { font-weight: 700; }
-#tenko .tk-name-link { font: inherit; font-weight: 700; color: var(--tk-blue); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; text-decoration: underline; text-underline-offset: 3px; }
+#tenko .tk-table td:first-child { min-width: 150px; }
+#tenko .tk-table .tk-sub { white-space: nowrap; }
+#tenko .tk-name-link { white-space: nowrap; font: inherit; font-weight: 700; color: var(--tk-blue); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; text-decoration: underline; text-underline-offset: 3px; }
 #tenko .tk-name-link:hover { color: var(--tk-navy); }
 
 #tenko .tk-modal { position: fixed; inset: 0; background: rgba(15, 25, 40, .45); display: flex; align-items: flex-start; justify-content: center; padding: 32px 16px; z-index: 1000; overflow-y: auto; }
@@ -113,6 +119,13 @@
 #tenko .tk-cell.up .cnt { color: var(--tk-red); }
 #tenko .tk-cell.down .cnt { color: var(--tk-green); }
 #tenko .tk-arrow { font-size: 12px; margin-left: 4px; }
+#tenko .tk-me { min-width: 120px; }
+#tenko .tk-me-line { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; line-height: 1.6; color: var(--tk-gray); white-space: nowrap; font-variant-numeric: tabular-nums; }
+#tenko .tk-me-line span { color: #1c2533; }
+#tenko .tk-me-line b { font-size: 13px; }
+#tenko .tk-me-line.up span { color: var(--tk-red); font-weight: 700; }
+#tenko .tk-me-line.down span { color: var(--tk-green); font-weight: 700; }
+#tenko .tk-me-line.na span { color: #9aa4b1; }
 
 #tenko .tk-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; background: #eef1f5; color: var(--tk-gray); }
 #tenko .tk-badge.warn { background: var(--tk-red-bg); color: var(--tk-red); }

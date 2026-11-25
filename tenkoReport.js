@@ -367,7 +367,7 @@
 
     // モービルアイの4項目は1つの列にまとめて表示（列が増えすぎないように）
     function meCellHtml(r) {
-      if (!$('tk-showme').checked) return '';   // モービルアイを表示しない時は列ごと出さない
+      if (!showMe) return '';   // モービルアイを表示しない時は列ごと出さない
       var unset = unsetKeys();
       var me = r.cats.filter(function (c) { return c.group === 'me'; });
       if (!me.length) return '<td></td>';
@@ -458,12 +458,14 @@
     }
 
     var rulesCache = null;
+    // モービルアイを表示するか（このブラウザに保存。初期値は表示する）
     var SHOWME_STORE_KEY = 'tenkoReport:showMobileye';
+    var showMe = store.get(SHOWME_STORE_KEY) !== false;
+    function syncMeHeader() { $('th-me').hidden = !showMe; }
 
     // 集計に使う項目とルール。ルールが未指定（モービルアイなど）の項目は、
     // 名前が「ME…」で項目のキーワードに合うルールを自動で全部使う（例：車線逸脱の右・左を合算）
     function categoriesFor(groupId) {
-      var showMe = $('tk-showme').checked;
       return activeCategories(groupId).filter(function (c) { return showMe || c.group !== 'me'; }).map(function (c) {
         var cfg = CONFIG.categories.filter(function (x) { return x.key === c.key; })[0];
         if (!c.overridden && !c.ruleIds.length && rulesCache && cfg.hint) {
@@ -718,12 +720,17 @@
       };
       var mainHtml = current.diag.filter(function (d) { return d.group !== 'me'; }).map(ruleLabel).join('');
       var meDiag = current.diag.filter(function (d) { return d.group === 'me'; });
+      var hasMe = CONFIG.categories.some(function (c) { return c.group === 'me'; });
 
       box.hidden = false;
       $('tk-diag-body').innerHTML =
         '<div class="tk-rulebar-row">' + mainHtml +
         noteHtml + '</div>' +
-        (meDiag.length ? '<div class="tk-rulebar-row tk-rulebar-me"><div class="tk-rulebar-sub">モービルアイ</div>' + meDiag.map(ruleLabel).join('') + '</div>' : '');
+        // モービルアイの段。表示しない時も段は残し、右端のチェックで戻せるようにする
+        (hasMe ? '<div class="tk-rulebar-row tk-rulebar-me"><div class="tk-rulebar-sub">モービルアイ</div>' +
+          (showMe ? meDiag.map(ruleLabel).join('') : '<span class="tk-me-off">非表示中（一覧・判定・グラフに使いません）</span>') +
+          '<label class="tk-checkopt tk-me-toggle"><span><input type="checkbox" id="tk-showme"' + (showMe ? ' checked' : '') + '> モービルアイを表示</span></label>' +
+          '</div>' : '');
     }
 
     function autoGrow(ta) {
@@ -817,15 +824,8 @@
       $('tk-fdev').addEventListener('change', render);
       $('tk-fdrv').addEventListener('change', render);
 
-      // モービルアイの表示（このブラウザに保存。初期値は表示する）
-      var syncMeHeader = function () { $('th-me').hidden = !$('tk-showme').checked; };
-      $('tk-showme').checked = store.get(SHOWME_STORE_KEY) !== false;
+      // モービルアイの表示（チェックボックスは「判定に使うルール」のモービルアイの段にある）
       syncMeHeader();
-      $('tk-showme').addEventListener('change', function () {
-        store.set(SHOWME_STORE_KEY, $('tk-showme').checked);
-        syncMeHeader();
-        load();
-      });
 
       $('tk-print').addEventListener('click', function () { window.print(); });
       $('tk-csv').addEventListener('click', exportCsv);
@@ -837,6 +837,13 @@
         load();
       });
       $('tk-diag-body').addEventListener('change', function (ev) {
+        if (ev.target.id === 'tk-showme') {
+          showMe = ev.target.checked;
+          store.set(SHOWME_STORE_KEY, showMe);
+          syncMeHeader();
+          load();
+          return;
+        }
         if (!ev.target.classList.contains('tk-rule')) return;
         var key = ruleStoreKey($('tk-group').value);
         var ov = store.get(key) || {};

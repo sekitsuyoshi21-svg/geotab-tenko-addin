@@ -30,6 +30,8 @@
 #tenko .tk-toolbar input, #tenko .tk-toolbar select { font: inherit; font-size: 14px; padding: 5px 8px; border: 1px solid #c5cfdc; border-radius: 6px; background: #fff; color: inherit; }
 #tenko .tk-spacer { flex: 1; }
 #tenko .tk-break { flex-basis: 100%; height: 0; }
+#tenko .tk-toolbar label.tk-checkopt { align-self: center; padding-top: 14px; font-size: 14px; color: #1c2533; cursor: pointer; }
+#tenko .tk-toolbar label.tk-checkopt input { width: 16px; height: 16px; vertical-align: -3px; margin: 0 4px 0 0; }
 #tenko .tk-toolbar select.tk-wide { min-width: 180px; max-width: 260px; }
 #tenko .tk-btn { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid #c5cfdc; background: #fff; cursor: pointer; }
 #tenko .tk-btn:hover { background: #eef3fa; }

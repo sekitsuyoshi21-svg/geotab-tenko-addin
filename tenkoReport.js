@@ -272,9 +272,11 @@
         total: total, assigned: assigned, known: known };
     });
 
+    var activeKeys = {};
+    raw.categories.forEach(function (c) { activeKeys[c.key] = 1; });
     var rows = Object.keys(ents).map(function (k) { return ents[k]; })
       .filter(function (e) { return e.dayKm > 0; })   // 前日に運行した人（車両）が点呼対象
-      .map(evaluate)
+      .map(function (e) { return evaluate(e, activeKeys); })
       .sort(function (a, b) {
         return STATUS[a.status].order - STATUS[b.status].order || String(a.name).localeCompare(String(b.name), 'ja');
       });
@@ -288,9 +290,10 @@
     };
   }
 
-  function evaluate(e) {
+  // activeKeys：集計に使う項目（モービルアイを表示しない時は、その4項目を判定から外す）
+  function evaluate(e, activeKeys) {
     var T = CONFIG.thresholds;
-    e.cats = CONFIG.categories.map(function (cat) {
+    e.cats = CONFIG.categories.filter(function (cat) { return !activeKeys || activeKeys[cat.key]; }).map(function (cat) {
       var c = e.c[cat.key];
       var dayRate = e.dayKm > 0 ? c.day / e.dayKm * 100 : 0;
       var baseRate = e.baseKm > 0 ? c.base / e.baseKm * 100 : null;
@@ -364,6 +367,7 @@
 
     // モービルアイの4項目は1つの列にまとめて表示（列が増えすぎないように）
     function meCellHtml(r) {
+      if (!$('tk-showme').checked) return '';   // モービルアイを表示しない時は列ごと出さない
       var unset = unsetKeys();
       var me = r.cats.filter(function (c) { return c.group === 'me'; });
       if (!me.length) return '<td></td>';
@@ -454,11 +458,13 @@
     }
 
     var rulesCache = null;
+    var SHOWME_STORE_KEY = 'tenkoReport:showMobileye';
 
     // 集計に使う項目とルール。ルールが未指定（モービルアイなど）の項目は、
     // 名前が「ME…」で項目のキーワードに合うルールを自動で全部使う（例：車線逸脱の右・左を合算）
     function categoriesFor(groupId) {
-      return activeCategories(groupId).map(function (c) {
+      var showMe = $('tk-showme').checked;
+      return activeCategories(groupId).filter(function (c) { return showMe || c.group !== 'me'; }).map(function (c) {
         var cfg = CONFIG.categories.filter(function (x) { return x.key === c.key; })[0];
         if (!c.overridden && !c.ruleIds.length && rulesCache && cfg.hint) {
           c.ruleIds = rulesCache.filter(function (r) {
@@ -810,6 +816,17 @@
       });
       $('tk-fdev').addEventListener('change', render);
       $('tk-fdrv').addEventListener('change', render);
+
+      // モービルアイの表示（このブラウザに保存。初期値は表示する）
+      var syncMeHeader = function () { $('th-me').hidden = !$('tk-showme').checked; };
+      $('tk-showme').checked = store.get(SHOWME_STORE_KEY) !== false;
+      syncMeHeader();
+      $('tk-showme').addEventListener('change', function () {
+        store.set(SHOWME_STORE_KEY, $('tk-showme').checked);
+        syncMeHeader();
+        load();
+      });
+
       $('tk-print').addEventListener('click', function () { window.print(); });
       $('tk-csv').addEventListener('click', exportCsv);
 

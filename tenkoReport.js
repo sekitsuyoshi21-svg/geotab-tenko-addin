@@ -692,7 +692,8 @@
         var autoIds = d.auto ? d.ruleIds : [];
         var list = allRules.filter(function (r) {
           if (d.overridden && r.id === id) return true;   // 選択中のルールは常に残す
-          return ruleFitsGroup(r) && (showAllRules || (catCfg.hint || RULE_HINT).test(r.name || ''));
+          // 各プルダウンには、その項目のキーワードに合うルールだけを出す
+          return ruleFitsGroup(r) && (catCfg.hint || RULE_HINT).test(r.name || '');
         });
         // 先頭の選択肢：標準ルール（急ブレーキ等）／自動で選んだルール（モービルアイ）
         var first = def.length
@@ -714,11 +715,9 @@
       box.hidden = false;
       $('tk-diag-body').innerHTML =
         '<div class="tk-rulebar-row">' + mainHtml +
-        '<label class="tk-allrules"><span><input type="checkbox" id="tk-allrules"' + (showAllRules ? ' checked' : '') + '> すべてのルールを候補に表示</span></label>' +
         noteHtml + '</div>' +
         (meDiag.length ? '<div class="tk-rulebar-row tk-rulebar-me"><div class="tk-rulebar-sub">モービルアイ</div>' + meDiag.map(ruleLabel).join('') + '</div>' : '');
     }
-    var showAllRules = false;
 
     function autoGrow(ta) {
       ta.style.height = 'auto';
@@ -820,7 +819,6 @@
         load();
       });
       $('tk-diag-body').addEventListener('change', function (ev) {
-        if (ev.target.id === 'tk-allrules') { showAllRules = ev.target.checked; renderDiag(); return; }
         if (!ev.target.classList.contains('tk-rule')) return;
         var key = ruleStoreKey($('tk-group').value);
         var ov = store.get(key) || {};

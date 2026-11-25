@@ -612,13 +612,13 @@
       html += '</div>';
 
       // 表で見る（色だけに頼らない・数値を確認できるように）
-      html += '<table class="tk-mtable"><thead><tr><th>日付</th><th>走行距離</th>' +
+      html += '<div class="tk-mtable-wrap"><table class="tk-mtable"><thead><tr><th>日付</th><th>走行距離</th>' +
         cats.map(function (c) { return '<th>' + esc(c.label) + '</th>'; }).join('') + '</tr></thead><tbody>';
       days.forEach(function (d, i) {
         html += '<tr' + (i === n - 1 ? ' class="is-target"' : '') + '><td>' + esc(d.label) + '</td><td>' + Math.round(row.kmByDay[i]) + ' km</td>' +
           cats.map(function (c) { return '<td>' + c.byDay[i] + '回</td>'; }).join('') + '</tr>';
       });
-      html += '</tbody></table>' +
+      html += '</tbody></table></div>' +
         '<p class="tk-msub">棒グラフは日ごとの回数です。判定（注意・改善）は走行100kmあたりの回数で比べています。</p>';
 
       $('tk-modal-title').textContent = row.name + '　過去' + n + '日間の推移';

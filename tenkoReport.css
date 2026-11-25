@@ -104,7 +104,7 @@
 
 #tenko .tk-modal { position: fixed; inset: 0; background: rgba(15, 25, 40, .45); display: flex; align-items: flex-start; justify-content: center; padding: 32px 16px; z-index: 1000; overflow-y: auto; }
 #tenko .tk-modal[hidden] { display: none; }
-#tenko .tk-modal-box { position: relative; background: #fff; border-radius: 10px; width: 100%; max-width: 760px; padding: 16px 20px 20px; box-shadow: 0 10px 30px rgba(0,0,0,.2); }
+#tenko .tk-modal-box { position: relative; background: #fff; border-radius: 10px; width: 100%; max-width: 1000px; padding: 16px 20px 20px; box-shadow: 0 10px 30px rgba(0,0,0,.2); }
 #tenko .tk-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 #tenko .tk-modal-head h2 { margin: 0; font-size: 18px; color: var(--tk-navy); }
 #tenko .tk-modal-close { font-size: 24px; line-height: 1; border: 0; background: none; cursor: pointer; color: var(--tk-gray); padding: 4px 8px; border-radius: 6px; }
@@ -116,8 +116,12 @@
 #tenko .tk-up { color: var(--tk-red); font-weight: 700; }
 #tenko .tk-down { color: var(--tk-green); font-weight: 700; }
 #tenko .tk-chart { width: 100%; height: auto; display: block; }
-#tenko .tk-mtable { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 12px; font-variant-numeric: tabular-nums; }
-#tenko .tk-mtable th { background: #eaf0f8; color: var(--tk-navy); text-align: right; padding: 5px 8px; }
+/* 日ごとの表：ポップアップの幅に入りきらないときは、表だけを横にスクロール（枠からはみ出さない） */
+#tenko .tk-mtable-wrap { overflow-x: auto; margin-top: 14px; border: 1px solid var(--tk-line); border-radius: 8px; }
+#tenko .tk-mtable { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+#tenko .tk-mtable-wrap .tk-mtable { margin-top: 0; }
+#tenko .tk-mtable th { background: #eaf0f8; color: var(--tk-navy); text-align: right; padding: 5px 8px; white-space: nowrap; }
+#tenko .tk-mtable td { white-space: nowrap; }
 #tenko .tk-mtable td { border-bottom: 1px solid var(--tk-line); padding: 5px 8px; text-align: right; }
 #tenko .tk-mtable th:first-child, #tenko .tk-mtable td:first-child { text-align: left; }
 #tenko .tk-mtable tr.is-target td { font-weight: 700; background: #f2f7fd; }

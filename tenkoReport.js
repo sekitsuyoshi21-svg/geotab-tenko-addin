@@ -515,8 +515,9 @@
           : '<span class="tk-none">—</span>';
         return '<tr class="st-' + r.status + (n.checked ? ' is-checked' : '') + '" data-idx="' + idx + '">' +
           '<td><button type="button" class="tk-name tk-name-link" title="過去' + (CONFIG.baselineDays + 1) + '日間のグラフを表示">' + esc(r.name) + '</button>' +
-          '<div class="tk-sub">前日 ' + Math.round(r.dayKm) + ' km</div>' +
-          '<div class="tk-sub">' + CONFIG.baselineDays + '日計 ' + Math.round(r.baseKm) + ' km</div></td>' +
+          '<div class="tk-km"><span class="lbl">前日</span><b>' + Math.round(r.dayKm).toLocaleString('ja-JP') + '</b> km</div>' +
+          '<div class="tk-km"><span class="lbl">' + CONFIG.baselineDays + '日計</span><b>' + Math.round(r.baseKm).toLocaleString('ja-JP') + '</b> km' +
+          '<span class="avg">（平均 ' + Math.round(r.baseKm / CONFIG.baselineDays).toLocaleString('ja-JP') + 'km/日）</span></div></td>' +
           r.cats.filter(function (c) { return c.group !== 'me'; }).map(cellHtml).join('') + meCellHtml(r) +
           '<td><span class="tk-badge ' + r.status + '">' + STATUS[r.status].label + '</span></td>' +
           '<td>' + changes + '</td>' +

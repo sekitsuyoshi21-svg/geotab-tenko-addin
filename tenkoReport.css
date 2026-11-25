@@ -85,7 +85,12 @@
 #tenko .tk-table tr.is-checked td { color: #6b7685; }
 
 #tenko .tk-name { font-weight: 700; }
-#tenko .tk-table td:first-child { min-width: 150px; }
+#tenko .tk-table td:first-child { min-width: 200px; }
+#tenko .tk-km { margin-top: 4px; font-size: 12px; color: #1c2533; white-space: nowrap; font-variant-numeric: tabular-nums; line-height: 1.5; }
+#tenko .tk-km .lbl { display: inline-block; width: 4.6em; margin-right: 4px; padding: 0 6px; border-radius: 4px; background: #eef2f7; color: var(--tk-gray); font-size: 11px; text-align: center; }
+#tenko .tk-km b { font-size: 15px; }
+#tenko .tk-km .avg { margin-left: 2px; font-size: 11px; color: var(--tk-gray); }
+#tenko .tk-table tr.is-checked .tk-km { color: #6b7685; }
 #tenko .tk-table .tk-sub { white-space: nowrap; }
 #tenko .tk-name-link { white-space: nowrap; font: inherit; font-weight: 700; color: var(--tk-blue); background: none; border: 0; padding: 0; cursor: pointer; text-align: left; text-decoration: underline; text-underline-offset: 3px; }
 #tenko .tk-name-link:hover { color: var(--tk-navy); }

@@ -62,6 +62,13 @@
         down: '歩行者警報が普段より減っています。引き続き周囲に注意しましょう。'
       }
     },
+    // 連続運転時間（改善基準告示）：連続運転は4時間まで。4時間ごとに合計30分以上の休憩（1回おおむね10分以上なら分割可）
+    drive: {
+      limitMin: 240,          // 連続運転の上限（分）
+      breakTotalMin: 30,      // 必要な休憩の合計（分）
+      breakUnitMin: 10        // 休憩として数える1回の最低時間（分）。これ未満の停車は運転の続きとみなす
+    },
+    driveComment: '連続運転が4時間を超えていました（最長{max}）。4時間ごとに合計30分以上（1回10分以上）の休憩をとりましょう。',
     goodComment:    '前日は注意が必要な運転の記録がありませんでした。引き続き安全運転を。',
     steadyComment:  '普段と大きな変化はありません。引き続き安全運転を。',
     noBaseComment:  '比較できる過去データがありません。今日から傾向を確認していきます。',
@@ -168,6 +175,42 @@
     return parts.filter(Boolean).join(' ') || u.name || u.id;
   }
 
+  // ===== 連続運転時間 =====================================================
+  // Trip の時間の長さ（"hh:mm:ss" または "d.hh:mm:ss"）を分に
+  function spanMin(s) {
+    if (!s || typeof s !== 'string') return null;
+    var m = /^(?:(\d+)\.)?(\d+):(\d+):(\d+(?:\.\d+)?)$/.exec(s);
+    return m ? (+(m[1] || 0)) * 1440 + (+m[2]) * 60 + (+m[3]) + (+m[4]) / 60 : null;
+  }
+  function fmtDur(min) {
+    var m = Math.round(min), h = Math.floor(m / 60);
+    return h ? h + '時間' + (m % 60 ? (m % 60) + '分' : '') : m + '分';
+  }
+  // 前日の走行（list：{s: 開始時刻ms, e: 終了時刻ms}）から、最長の連続運転時間と休憩不足を求める
+  //  ・走行と走行のあいだの停車が breakUnitMin 分以上なら休憩として合算し、合計が breakTotalMin 分になったらカウントを0に戻す
+  //  ・連続運転が limitMin 分を超えたら「休憩不足」
+  function continuousDrive(list) {
+    var D = CONFIG.drive;
+    var trips = list.filter(function (t) { return t.e > t.s; }).sort(function (a, b) { return a.s - b.s; });
+    if (!trips.length) return null;
+    var cont = 0, brk = 0, max = 0, exceedAt = null, driveTotal = 0;
+    trips.forEach(function (t, i) {
+      var dur = (t.e - t.s) / 60000;
+      driveTotal += dur;
+      if (exceedAt === null && cont + dur > D.limitMin) exceedAt = t.s + (D.limitMin - cont) * 60000;
+      cont += dur;
+      if (cont > max) max = cont;
+      var next = trips[i + 1];
+      if (!next) return;
+      var gap = Math.max(0, (next.s - t.e) / 60000);
+      if (gap >= D.breakUnitMin) {
+        brk += gap;
+        if (brk >= D.breakTotalMin) { cont = 0; brk = 0; }
+      }
+    });
+    return { maxMin: max, exceeded: exceedAt !== null, exceedAt: exceedAt, driveMin: driveTotal };
+  }
+
   // ===== 集計・判定 =======================================================
   function aggregate(raw, unit) {
     var devName = {}, userName = {};
@@ -197,7 +240,7 @@
         ents[key] = {
           id: key,
           name: unit === 'driver' ? (userName[key] || key) : (devName[key] || key),
-          dayKm: 0, baseKm: 0, c: c, kmByDay: zeros(),
+          dayKm: 0, baseKm: 0, c: c, kmByDay: zeros(), dayTrips: [],   // dayTrips：前日の走行（連続運転時間の計算用）
           devs: {}, drvs: {}   // 前日にこの対象と組んだ車両／ドライバー（絞り込み用）
         };
         ents[key][unit === 'driver' ? 'drvs' : 'devs'][key] = 1;
@@ -238,7 +281,13 @@
       var e = ent(key);
       e[s + 'Km'] += km;
       e.kmByDay[dayIndex(tr.start)] += km;
-      if (s === 'day') { e.devs[devId] = 1; if (known) e.drvs[drvId] = 1; }
+      if (s === 'day') {
+        e.devs[devId] = 1; if (known) e.drvs[drvId] = 1;
+        // 走行の開始・終了時刻（終了が無い時は drivingDuration から求める）
+        var ts = new Date(tr.start).getTime();
+        var te = tr.stop ? new Date(tr.stop).getTime() : (spanMin(tr.drivingDuration) != null ? ts + spanMin(tr.drivingDuration) * 60000 : ts);
+        e.dayTrips.push({ s: ts, e: te });
+      }
     });
 
     // 例外イベントにドライバーが付いていない時は、同じ車両・同じ時刻のトリップのドライバーで補う
@@ -276,7 +325,7 @@
     raw.categories.forEach(function (c) { activeKeys[c.key] = 1; });
     var rows = Object.keys(ents).map(function (k) { return ents[k]; })
       .filter(function (e) { return e.dayKm > 0; })   // 前日に運行した人（車両）が点呼対象
-      .map(function (e) { return evaluate(e, activeKeys); })
+      .map(function (e) { e.drive = continuousDrive(e.dayTrips); return evaluate(e, activeKeys); })
       .sort(function (a, b) {
         return STATUS[a.status].order - STATUS[b.status].order || String(a.name).localeCompare(String(b.name), 'ja');
       });
@@ -325,8 +374,16 @@
 
     var lines = ups.map(function (c) { return CONFIG.comments[c.key].up; })
       .concat(downs.map(function (c) { return CONFIG.comments[c.key].down; }));
+
+    // 連続運転時間の休憩不足は、ほかの判定より優先して「注意」にする
+    var driveOver = !!(e.drive && e.drive.exceeded);
+    if (driveOver) {
+      e.status = 'warn';
+      e.changes.unshift({ trend: 'up', text: '連続運転：最長 ' + fmtDur(e.drive.maxMin) + '（4時間を超えて休憩不足）' });
+      lines.unshift(CONFIG.driveComment.replace('{max}', fmtDur(e.drive.maxMin)));
+    }
     if (!lines.length) lines.push(noBase ? CONFIG.noBaseComment : allZero ? CONFIG.goodComment : CONFIG.steadyComment);
-    if (e.lowData) lines.push(CONFIG.lowDataComment);
+    if (e.lowData && !driveOver) lines.push(CONFIG.lowDataComment);
     e.templateComment = lines.join('\n');
     return e;
   }
@@ -385,6 +442,16 @@
         '<div class="cnt">' + c.day + '<small>回</small>' + arrow + '</div>' +
         '<div class="rate">' + fmt1(c.dayRate) + ' /100km</div>' +
         '<div class="rate">平均 ' + fmt1(c.baseRate) + '</div></td>';
+    }
+
+    // 連続運転時間の列（前日の最長の連続運転と、4時間を超えた休憩不足）
+    function driveCellHtml(r) {
+      var d = r.drive;
+      if (!d) return '<td class="tk-drive na" title="走行の終了時刻が分からないため計算できません">—</td>';
+      return '<td class="tk-drive ' + (d.exceeded ? 'over' : 'ok') + '" title="前日の運転合計 ' + esc(fmtDur(d.driveMin)) + '">' +
+        '<div class="cnt">' + esc(fmtDur(d.maxMin)) + '</div>' +
+        '<div class="rate">最長の連続運転</div>' +
+        (d.exceeded ? '<div class="tk-drive-flag">⚠ 休憩不足</div>' : '<div class="tk-drive-okflag">休憩OK</div>') + '</td>';
     }
 
     // 車両・ドライバーのプルダウンで絞った行（KPI・一覧・CSVの対象）
@@ -526,7 +593,7 @@
           '<div class="tk-km"><span class="lbl">前日</span><b>' + Math.round(r.dayKm).toLocaleString('ja-JP') + '</b> km</div>' +
           '<div class="tk-km"><span class="lbl">' + CONFIG.baselineDays + '日計</span><b>' + Math.round(r.baseKm).toLocaleString('ja-JP') + '</b> km' +
           '<span class="avg">（平均 ' + Math.round(r.baseKm / CONFIG.baselineDays).toLocaleString('ja-JP') + 'km/日）</span></div></td>' +
-          r.cats.filter(function (c) { return c.group !== 'me'; }).map(cellHtml).join('') + meCellHtml(r) +
+          r.cats.filter(function (c) { return c.group !== 'me'; }).map(cellHtml).join('') + driveCellHtml(r) + meCellHtml(r) +
           '<td><span class="tk-badge ' + r.status + '">' + STATUS[r.status].label + '</span></td>' +
           '<td>' + changes + '</td>' +
           '<td><textarea class="tk-comment' + (n.edited ? ' edited' : '') + '" aria-label="' + esc(r.name) + 'の点呼コメント">' + esc(n.comment) + '</textarea>' +
@@ -536,7 +603,7 @@
           '</tr>';
       }).join('');
 
-      $('tk-body').innerHTML = html || '<tr><td colspan="9" class="tk-none">表示する対象がありません。</td></tr>';
+      $('tk-body').innerHTML = html || '<tr><td colspan="10" class="tk-none">表示する対象がありません。</td></tr>';
       Array.prototype.forEach.call(document.querySelectorAll('#tenko .tk-comment'), autoGrow);
     }
 
@@ -719,6 +786,14 @@
           '<span class="tk-rule-count' + (d.total === 0 ? ' zero' : '') + '">' + esc(count) + '</span></label>';
       };
       var mainHtml = current.diag.filter(function (d) { return d.group !== 'me'; }).map(ruleLabel).join('');
+      // 連続運転時間（ルールの選択は不要。走行記録から計算）
+      var D = CONFIG.drive;
+      var driveRows = filteredRows().filter(function (r) { return r.drive; });
+      var driveOver = driveRows.filter(function (r) { return r.drive.exceeded; }).length;
+      mainHtml += '<div class="tk-drive-rule" title="改善基準告示：連続運転は4時間まで。4時間ごとに合計30分以上の休憩（1回おおむね10分以上なら分割可）">' +
+        '<span class="tk-drive-rule-title">連続運転時間</span>' +
+        '<span class="tk-drive-rule-body">' + (D.limitMin / 60) + '時間ごとに合計' + D.breakTotalMin + '分以上の休憩（1回' + D.breakUnitMin + '分以上）</span>' +
+        '<span class="tk-rule-count' + (driveOver ? ' tk-drive-over' : '') + '">前日 休憩不足 ' + driveOver + '件 ／ ' + driveRows.length + '件中</span></div>';
       var meDiag = current.diag.filter(function (d) { return d.group === 'me'; });
       var hasMe = CONFIG.categories.some(function (c) { return c.group === 'me'; });
 
@@ -781,12 +856,18 @@
       CONFIG.categories.forEach(function (c) {
         head.push(c.label + '(前日回数)', c.label + '(前日/100km)', c.label + '(平均/100km)');
       });
+      head.push('最長の連続運転(分)', '連続運転の判定');
       head.push('判定', '確認した変化', '点呼コメント', '確認済');
       var lines = [head];
       filteredRows().forEach(function (r) {
         var n = noteOf(r);
         var line = [r.name, Math.round(r.dayKm), Math.round(r.baseKm)];
-        r.cats.forEach(function (c) { line.push(c.day, fmt1(c.dayRate), fmt1(c.baseRate)); });
+        // 項目の列の並びをヘッダーと合わせる（表示しない項目は空欄）
+        CONFIG.categories.forEach(function (cfg) {
+          var c = r.cats.filter(function (x) { return x.key === cfg.key; })[0];
+          if (c) line.push(c.day, fmt1(c.dayRate), fmt1(c.baseRate)); else line.push('', '', '');
+        });
+        line.push(r.drive ? Math.round(r.drive.maxMin) : '', r.drive ? (r.drive.exceeded ? '休憩不足' : 'OK') : '');
         line.push(STATUS[r.status].label, r.changes.map(function (c) { return c.text; }).join(' / '), n.comment, n.checked ? '済' : '');
         lines.push(line);
       });
@@ -954,10 +1035,15 @@
           var km = isTarget && p.dayKm ? p.dayKm : Math.round(110 + rng() * 120);
           // ?demo=nodriver：ドライバー識別が無い状態を再現
           var drv = { id: /nodriver/.test(location.search) && i % 4 ? 'UnknownDriverId' : 'demo-u' + i }, dev = { id: 'demo-d' + i };
-          var t1 = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 7, 30);
-          var t2 = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 13, 10);
-          out.trips.push({ device: dev, driver: drv, start: t1.toISOString(), distance: km * 0.55 });
-          out.trips.push({ device: dev, driver: drv, start: t2.toISOString(), distance: km * 0.45 });
+          // 走行の予定（[開始時, 開始分, 終了時, 終了分, 距離の割合]）。普段は30分以上の休憩を挟む
+          var at = function (h, m) { return new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m); };
+          var plan = [[7, 30, 9, 50, 0.3], [10, 20, 12, 0, 0.25], [13, 10, 15, 30, 0.3], [15, 45, 17, 10, 0.15]];
+          // 前日だけ連続運転が4時間を超える人（デモ）：高橋は休憩なしで4時間40分、渡辺は8分の停車だけで4時間12分
+          if (isTarget && i === 3) plan = [[7, 30, 12, 10, 0.6], [13, 10, 16, 0, 0.4]];
+          if (isTarget && i === 6) plan = [[7, 0, 9, 30, 0.35], [9, 38, 11, 20, 0.3], [12, 30, 15, 0, 0.35]];
+          plan.forEach(function (pl) {
+            out.trips.push({ device: dev, driver: drv, start: at(pl[0], pl[1]).toISOString(), stop: at(pl[2], pl[3]).toISOString(), distance: km * pl[4] });
+          });
           Object.keys(ruleOf).forEach(function (k) {
             var base = p.base[k] != null ? p.base[k] : ME_BASE[k];
             var rate = isTarget && p.day[k] != null ? p.day[k] : base;

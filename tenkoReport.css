@@ -180,3 +180,15 @@
   #tenko textarea { display: none; }
   #tenko .print-only { display: block; white-space: pre-wrap; }
 }
+
+/* 連続運転時間（改善基準告示：4時間ごとに合計30分の休憩） */
+#tenko .tk-drive-rule { display: flex; flex-direction: column; gap: 4px; min-width: 220px; padding: 2px 0 0; }
+#tenko .tk-drive-rule-title { font-weight: 700; font-size: 14px; color: #1c2533; }
+#tenko .tk-drive-rule-body { display: inline-block; font-size: 14px; padding: 6px 10px; border: 1px solid #c5cfdc; border-radius: 6px; background: #f7f9fc; color: #1c2533; }
+#tenko .tk-rule-count.tk-drive-over { color: var(--tk-red); font-weight: 700; }
+#tenko .tk-drive .cnt { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#tenko .tk-drive .rate { font-size: 11px; color: var(--tk-gray); white-space: nowrap; }
+#tenko .tk-drive.over .cnt { color: var(--tk-red); }
+#tenko .tk-drive-flag { display: inline-block; margin-top: 3px; font-size: 12px; font-weight: 700; color: var(--tk-red); background: var(--tk-red-bg); border: 1px solid #f3c2c2; border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+#tenko .tk-drive-okflag { display: inline-block; margin-top: 3px; font-size: 11px; color: var(--tk-green); white-space: nowrap; }
+#tenko .tk-drive.na { color: var(--tk-gray); }
